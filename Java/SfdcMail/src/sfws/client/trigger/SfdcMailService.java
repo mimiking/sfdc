@@ -1,5 +1,7 @@
 package sfws.client.trigger;
 
+import java.io.File;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.Date;
@@ -31,6 +33,7 @@ import com.sun.mail.smtp.SMTPMessage;
 
 import sfws.client.cmn.CmdAgent;
 import sfws.client.cmn.ICmdService;
+import sfws.client.util.CSVFileWriter;
 
 public class SfdcMailService implements ICmdService {
 	//エンコード指定
@@ -86,55 +89,14 @@ public class SfdcMailService implements ICmdService {
 		boolean isSuccess = true;
 		SfdcMailAgent agent = (SfdcMailAgent)cmdAgent;
 		if (SfdcMailAgent.MODE_LOCAL == agent.getMode()) {
-			
-			logger.info("ローカル送信開始します。");
 			manageMap = new HashMap<String, SfdcResult>();
+			
 			// ローカル送信
 			isSuccess = !this.sendMail(agent);
 			
-			logger.info("ローカル送信終了しました。");
-			logger.info("ローカル送信結果更新開始します。");
+			// 送信管理情報更新
+			this.updateManage(agent.getLimitSize());
 			
-			// 送信管理結果更新
-        	try {
-        		int result;
-        		int limitSize = agent.getLimitSize();
-        		SfdcParam limitParam = new SfdcParam();
-        		SfdcParam[] param = new SfdcParam[1];
-            	SfdcParam[] successList = getSfdcParam(manageMap, SEND_RESULT_SUCCESS);
-            	SfdcParam[] failureList = getSfdcParam(manageMap, SEND_RESULT_FAILURE);
-            	int size = successList.length + failureList.length;
-            	if(size > 0) {
-	            	limitParam.setLimitSize(limitSize);
-	            	param[0] = limitParam;
-	            	if (size <= agent.getLimitSize()) {
-	            		// 一括更新
-	            		result = connection.updateManageList(successList, failureList, param);
-	            		if (result == -1) {
-	        				// 異常発生
-	        				// TODO:
-	        			}
-	            	} else {
-	            		int count = size % limitSize == 0 ? size / limitSize : size / limitSize + 1;
-	            		for(int i = 0; i < count; i++) {
-	            			// 繰り返して更新する
-	            			result = connection.updateManageList(successList, failureList, param);
-	            			if (result == -1) {
-	            				// 異常発生
-	            				// TODO:
-	            			}
-	            		}
-	            	}
-            	} else {
-            		logger.info("更新管理情報が存在しません。");
-            	}
-			} catch (ConnectionException e) {
-				logger.error("管理情報結果更新失敗しました。");
-				logger.error(e.getMessage());
-				logger.error(e.getCause());
-			}
-			
-        	logger.info("ローカル送信結果更新完了しました。");
 		} else if (SfdcMailAgent.MODE_CLOUD == agent.getMode()) {
 			// クラウド送信
 			try {
@@ -167,6 +129,9 @@ public class SfdcMailService implements ICmdService {
         SfdcParam[] successList;
         SfdcParam[] failureList;
         String id = null;
+        
+        logger.info("ローカル送信開始します。");
+        
 		final Properties properties = this.getMailProperties(agent);
 		//propsに設定した情報を使用して、sessionの作成
         final Session session = this.getSession(properties, agent.getSender(), agent.getSendPassword());
@@ -192,8 +157,9 @@ public class SfdcMailService implements ICmdService {
             		failureList = getSfdcParam(receiverMap, SEND_RESULT_FAILURE);
             		remains = connection.updateReceiverList(successList, failureList, params);
             		if(remains == -1) {
-            			// 更新失敗
-            			// TODO:
+            			// 更新失敗、CSVファイル出力して処理中止する。
+            			isAbort = true;
+            			this.writeCsv(successList, failureList);
             		}
             	} else {
             		logger.info(String.format("送信対象データが存在しません。 [id=%s]", id));
@@ -206,6 +172,8 @@ public class SfdcMailService implements ICmdService {
     		}
         	
         } while(remains > 0 && !isAbort);
+        
+        logger.info(String.format("ローカル送信完了しました。[ result: %s", isAbort));
         
         return isAbort;
 	}
@@ -400,6 +368,98 @@ public class SfdcMailService implements ICmdService {
 			result.add();
 		}
 		map.put(key, result);
+	}
+	
+	/**
+	 * 送信管理結果更新を行う。
+	 * @param limitSize 制限件数
+	 * @return 処理結果（-1: 異常が発生）
+	 */
+	private int updateManage(int limitSize) {
+		
+		logger.info("送信管理情報送信結果を更新します。");
+		
+		int result = 0;
+		// 送信管理結果更新
+    	SfdcParam[] successList = getSfdcParam(manageMap, SEND_RESULT_SUCCESS);
+    	SfdcParam[] failureList = getSfdcParam(manageMap, SEND_RESULT_FAILURE);
+    	int size = successList.length + failureList.length;
+    	if(size > 0) {
+    		SfdcParam limitParam = new SfdcParam();
+    		SfdcParam[] param = new SfdcParam[1];
+        	limitParam.setLimitSize(limitSize);
+        	param[0] = limitParam;
+        	int count = size % limitSize == 0 ? size / limitSize : size / limitSize + 1;
+        	try {
+        		for(int i = 0; i < count; i++) {
+        			// 繰り返して更新する
+					result = connection.updateManageList(successList, failureList, param);
+        			if (result == -1) {
+        				// 異常発生、処理中止
+        				break;
+        			}
+        		}
+        	} catch (ConnectionException e) {
+        		result = -1;
+        		logger.error("管理情報結果更新する時、異常が発生しました。");
+    			logger.error(e.getMessage());
+    			logger.error(e.getCause());
+			}
+        	
+        	if(result == -1) {
+    			// CSVファイル出力
+    			writeCsv(successList, failureList);
+    		}
+    	} else {
+    		logger.info("更新管理情報が存在しません。");
+    	}
+    	
+    	logger.info(String.format("送信管理情報送信結果を更新しました。[ result = %d ]", result));
+    	
+    	return result;
+		
+	}
+	
+	/**
+	 * 処理結果をCSVに出力する。
+	 * 
+	 * @param successList 送信成功情報
+	 * @param failureList 送信失敗情報
+	 */
+	private void writeCsv(SfdcParam[] successList, SfdcParam[] failureList) {
+		if(successList != null || failureList != null) {
+			String fileName = String.format("./output/update_failure_data_%s.csv", new Date().getTime());
+			CSVFileWriter fileWritter = new CSVFileWriter(new File(fileName));
+			writeCsv(fileWritter, successList);
+			writeCsv(fileWritter, failureList);
+		}
+		
+		
+	}
+	
+	/**
+	 * CSVファイル出力を行う。
+	 * @param fileWritter 出力オブジェクト
+	 * @param paramList 結果情報
+	 */
+	private void writeCsv(CSVFileWriter fileWritter, SfdcParam[] paramList) {
+		try {
+			List<String> itemList = null;
+			if(paramList != null && paramList.length > 0) {
+				for(SfdcParam param: paramList) {
+					itemList = new ArrayList<String>();
+					itemList.add(param.getId());
+					itemList.add(String.valueOf(param.getRetryCount()));
+					
+					
+				}
+				fileWritter.writeLine(itemList);
+			}
+		} catch (IOException e) {
+			logger.error("CSVファイル出力失敗しました。");
+			logger.error(e.getMessage());
+			logger.error(e.getStackTrace());
+		}
 	}
 
 }
