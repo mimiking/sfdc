@@ -163,7 +163,28 @@ global class SfdcMailWebService {
 
     private static SfdcResult sendMail(MailReceiver__c receiver, Integer retryCount, Integer waitSeconds) {
         SfdcResult result = null;
-        // TODO:
+        Messaging.SingleEmailMessage message = new Messaging.SingleEmailMessage();
+        if(receiver.SEND_ADR__c != null 
+           && (receiver.SEND_KBN__c == '1' || receiver.SEND_KBN__c == '2' || receiver.SEND_KBN__c == '3')) {
+            if(receiver.SEND_KBN__c == '1') {
+                // TO
+                message.setToAddresses(new String[] { receiver.SEND_ADR__c });
+            } else if(receiver.SEND_KBN__c == '2') {
+                // CC
+                message.setCcAddresses(new String[] { receiver.SEND_ADR__c });
+            } else if(receiver.SEND_KBN__c == '3') {
+                // BCC
+                message.setBccAddresses(new String[] { receiver.SEND_ADR__c });
+            }
+            
+            //message.optOutPolicy = 'FILTER';
+            message.setSenderDisplayName(receiver.MAIL_SEQ_NUM__r.FROM_NAME__c);
+            message.setReplyTo(receiver.MAIL_SEQ_NUM__r.REPLY_TO_ADDRESS__c);
+            message.subject = receiver.MAIL_SEQ_NUM__r.MAIL_SUBJECT__c;
+            message.plainTextBody = receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c;
+            Messaging.SingleEmailMessage[] messages = new List<Messaging.SingleEmailMessage>{message};
+            Messaging.SendEmailResult[] results = Messaging.sendEmail(messages);
+        }
 
         return result;
     }
@@ -461,7 +482,8 @@ global class SfdcMailWebService {
         return result;
     }
 
-    private static Integer updateManage(List<MailManage__c> manageList, Map<Id,SfdcResult> resultMap, Id lastMamageId, Id lastReceiverId) {
+    private static Integer updateManage(
+        List<MailManage__c> manageList, Map<Id,SfdcResult> resultMap, Id lastMamageId, Id lastReceiverId) {
         Integer result = 0;
         if(manageList != null && manageList.size() > 0 && resultMap != null && !resultMap.isEmpty()) {
             SfdcResult sfdcResult;

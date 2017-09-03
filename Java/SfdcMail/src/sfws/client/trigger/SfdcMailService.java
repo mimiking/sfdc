@@ -102,7 +102,11 @@ public class SfdcMailService implements ICmdService {
 			try {
 				logger.info("クラウド送信開始します。");
 				// 繰り返して
-				connection.sendMail(agent.getLimitSize(), agent.getRetryCount(), agent.getWaitSeconds());
+				SfdcParam params = new SfdcParam();
+				params.setLimitSize(agent.getLimitSize());
+				params.setRetryCount(agent.getRetryCount());
+				params.setWaitSeconds(agent.getWaitSeconds());
+				connection.sendMail(params);
 				logger.info("クラウド送信完了しました。");
 			} catch (ConnectionException e) {
 				logger.error("クラウド送信失敗しました。");
