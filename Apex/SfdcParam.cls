@@ -7,4 +7,6 @@ global class SfdcParam {
 	webService Integer limitSize;
     // 待ち時間（秒）
     webService Integer waitSeconds;
+    // 結果
+    webService Integer result;
 }

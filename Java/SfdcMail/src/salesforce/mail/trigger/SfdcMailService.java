@@ -101,12 +101,26 @@ public class SfdcMailService implements ICmdService {
 			// クラウド送信
 			try {
 				logger.info("クラウド送信開始します。");
-				// 繰り返して
+				// クラウド送信は毎日最大１０００件で制限している
 				SfdcParam params = new SfdcParam();
-				params.setLimitSize(agent.getLimitSize());
-				params.setRetryCount(agent.getRetryCount());
-				params.setWaitSeconds(agent.getWaitSeconds());
-				connection.sendMail(params);
+				if (agent.getLimitSize() > 1000) {
+					params.setLimitSize(1000);
+				} else {
+					params.setLimitSize(agent.getLimitSize());
+				}
+				do {
+					// 繰り返して
+					SfdcParam ret = connection.sendMail(params);
+					params.setResult(ret.getResult());
+					params.setId(ret.getId());
+				} while(params.getResult() != -1 && params.getId() != null);
+				
+				if(params.getResult() != -1) {
+					// 送信失敗
+					isSuccess = false;
+					logger.info("処理失敗しました、処理中止とする。");
+				}
+				
 				logger.info("クラウド送信完了しました。");
 			} catch (ConnectionException e) {
 				logger.error("クラウド送信失敗しました。");
@@ -121,9 +135,18 @@ public class SfdcMailService implements ICmdService {
 	@Override
 	public void getDebugLog() {
 		// Salesforceログ出力
-		logger.debug(connection.getDebuggingInfo().toString());
+		DebuggingInfo_element info = connection.getDebuggingInfo();
+		if(info != null) {
+			logger.debug(info.toString());
+		}
+		
 	}
 	
+	/**
+	 * クライアントでメール送信を行う。
+	 * @param agent
+	 * @return 処理結果
+	 */
 	private boolean sendMail(SfdcMailAgent agent) {
 		boolean isAbort = false;
         int remains = 0;
@@ -197,6 +220,14 @@ public class SfdcMailService implements ICmdService {
         });
 	}
 	
+	/**
+	 * メール送信を行う。
+	 * @param session セッション情報
+	 * @param info 送信情報
+	 * @param retryCount リトライ回数
+	 * @param waitSeconds 待ち時間（秒）
+	 * @return
+	 */
 	private boolean sendMail(Session session, ClientMailInfo info, int retryCount, int waitSeconds) {
 		boolean isAbort = false;
 		int retriedCount = 0;
@@ -234,6 +265,12 @@ public class SfdcMailService implements ICmdService {
 		return isAbort;
 	}
 	
+	/**
+	 * メール送信を行う。
+	 * @param session セッション情報
+	 * @param info 送信内容
+	 * @return 送信結果
+	 */
 	private SfdcResult sendMail(Session session, ClientMailInfo info) {
 		SfdcResult result = new SfdcResult(SEND_RESULT_FAILURE);
 		
@@ -298,6 +335,11 @@ public class SfdcMailService implements ICmdService {
 	
 	
 	
+	/**
+	 * メール送信設定情報を取得する。
+	 * @param agent 代理情報
+	 * @return 設定情報
+	 */
 	private Properties getMailProperties(SfdcMailAgent agent) {
 		final Properties props = new Properties();
 		// SMTPサーバーの設定。
@@ -326,6 +368,13 @@ public class SfdcMailService implements ICmdService {
 		return props;
 	}
 	
+	/**
+	 * 送信アドレスオブジェクトを取得する。
+	 * @param name 表示名
+	 * @param mail メール
+	 * @return
+	 * @throws UnsupportedEncodingException
+	 */
 	private Address getAddress(String name, String mail) throws UnsupportedEncodingException {
 		return new InternetAddress(mail, name, ENCODE);
 	}
@@ -334,6 +383,12 @@ public class SfdcMailService implements ICmdService {
 		return input != null && input.trim().length() > 0;
 	}
 	
+	/**
+	 * 格納情報から情報を取得する。
+	 * @param map 格納情報
+	 * @param value 値
+	 * @return 情報
+	 */
 	private SfdcParam[] getSfdcParam(Map<String, SfdcResult> map, int value) {
 		List<SfdcParam> paramList = new ArrayList<SfdcParam>();
 		if(map != null && map.size() > 0) {
@@ -353,6 +408,12 @@ public class SfdcMailService implements ICmdService {
 		return params;
 	}
 	
+	/**
+	 * 処理結果更新を行う。
+	 * @param map 処理結果情報
+	 * @param key キー
+	 * @param isSuccess 処理成功フラグ
+	 */
 	private void updateResult(Map<String, SfdcResult> map, String key, boolean isSuccess) {
 		SfdcResult result;
 		int value = isSuccess ? SEND_RESULT_SUCCESS : SEND_RESULT_FAILURE;
@@ -437,8 +498,6 @@ public class SfdcMailService implements ICmdService {
 			writeCsv(fileWritter, successList);
 			writeCsv(fileWritter, failureList);
 		}
-		
-		
 	}
 	
 	/**
@@ -454,8 +513,6 @@ public class SfdcMailService implements ICmdService {
 					itemList = new ArrayList<String>();
 					itemList.add(param.getId());
 					itemList.add(String.valueOf(param.getRetryCount()));
-					
-					
 				}
 				fileWritter.writeLine(itemList);
 			}

@@ -144,26 +144,6 @@ global class SfdcMailWebService {
     }
 
     /**
-     * 処理していないデータ件数を取得する。
-     * @param lastSendId 前回送信情報ID
-     */
-    private static Integer getRemains(Id lastSendId) {
-        Integer count = [
-            Select
-              Count() 
-            From
-              MailReceiver__c
-            Where
-              SEND_RESULT__c != '1'
-              And MAIL_SEQ_NUM__r.SEND_RESULT__c !='1'
-              And Id > :lastSendId
-              And SEND_ADR__c != ''
-        ];
-
-        return count;
-    }
-
-    /**
      * 送信管理情報を更新する。
      * @param manageList 送信管理情報
      * @param successList 送信成功情報
@@ -251,8 +231,10 @@ global class SfdcMailWebService {
      * Saleforceでメール送信を行う。
      * @param param 送信パラメータ
      */
-    webService static Integer sendMail(SfdcParam param) {
+    webService static SfdcParam sendMail(SfdcParam param) {
         Integer result = 0;
+        SfdcParam sfdcParam = new sfdcParam();
+        sfdcParam.result = result;
         List<MailReceiver__c> receiverList;
         List<ClientMailInfo> clientMailList = new List<ClientMailInfo>();
         // 送信処理
@@ -318,14 +300,21 @@ global class SfdcMailWebService {
                     }
                 }
 
-
+                // 残されたデータ取得
+                sfdcParam.result = result;
+                if(result != -1) {
+                    // 処理成功の場合
+                    if(getRemains(lastReceiverId) > 0) {
+                        // 残されたデータあり
+                        sfdcParam.id = lastReceiverId;
+                    }
+                }
             } else {
                 info('メール送信データがありません。');
             }
         }
         
-        
-        return result;
+        return sfdcParam;
     }
 
     /**
@@ -608,6 +597,26 @@ global class SfdcMailWebService {
         ];
 
         return manageList;
+    }
+
+    /**
+     * 処理していないデータ件数を取得する。
+     * @param lastSendId 前回送信情報ID
+     */
+    private static Integer getRemains(Id lastSendId) {
+        Integer count = [
+            Select
+              Count() 
+            From
+              MailReceiver__c
+            Where
+              SEND_RESULT__c != '1'
+              And MAIL_SEQ_NUM__r.SEND_RESULT__c !='1'
+              And Id > :lastSendId
+              And SEND_ADR__c != ''
+        ];
+
+        return count;
     }
 
     private static void info(Object message) {
