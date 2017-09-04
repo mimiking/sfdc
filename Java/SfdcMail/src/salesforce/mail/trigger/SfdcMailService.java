@@ -137,7 +137,7 @@ public class SfdcMailService implements ICmdService {
 		// Salesforceログ出力
 		DebuggingInfo_element info = connection.getDebuggingInfo();
 		if(info != null) {
-			logger.debug(info.toString());
+			logger.info(info.toString());
 		}
 		
 	}

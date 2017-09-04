@@ -20,7 +20,7 @@
     </layout>
   </appender>
   
-  <logger name="sfws">
+  <logger name="salesforce">
     <level value="debug" />
     <appender-ref ref="FILE" />
   </logger>
