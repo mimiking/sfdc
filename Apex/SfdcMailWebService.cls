@@ -54,7 +54,7 @@ global class SfdcMailWebService {
              toDoCount = updateReceiver(receiverList, successList, failureList);
              if(toDoCount != -1) {
                  // 異常発生しない場合、次回処理対象件数取得
-                 toDoCount = getToDoCount(param.id);
+                 toDoCount = getRemains(param.id);
              }
         }
         info('宛先送信結果情報の更新が終了しました。[ 処理結果：' + toDoCount + ' ]');
@@ -83,267 +83,38 @@ global class SfdcMailWebService {
 
         return result;
     }
-    
-    webService static Integer sendMail(SfdcParam param) {
-        Integer result = 0;
-        List<MailReceiver__c> receiverList;
-        List<ClientMailInfo> clientMailList = new List<ClientMailInfo>();
-        // 送信処理
-        if(param != null) {
-            if(param.id == null) {
-                // 初回
-                receiverList = getFirstPage(param.limitSize);
-            } else {
-                // ２回目以後
-                receiverList = getNextPage(param.limitSize, param.id);
-            }
 
-            if(receiverList != null && receiverList.size() > 0) {
-                Id lastMamageId;
-                Id lastReceiverId;
-                Boolean isAbort = false;
-                SfdcResult receiverResult;
-                SfdcResult manageResult;
-                //List<SfdcParam> successList = new List<SfdcParam>();
-                //List<SfdcParam> failureList = new List<SfdcParam>();
-                Map<Id, SfdcResult> receiverMap = new Map<Id, SfdcResult>();
-                Map<Id, SfdcResult> manageMap = new Map<Id, SfdcResult>();
-                for(MailReceiver__c receiver: receiverList) {
-                    // メール送信を行う
-                    receiverResult = sendMail(receiver, param.retryCount, param.waitSeconds);
-                    if(receiverResult != null) {
-                        receiverMap.put(receiver.Id, receiverResult);
-                        manageResult = manageMap.get(receiver.MAIL_SEQ_NUM__c);
-                        if(manageResult != null) {
-                            // 既に存在
-                            if(manageResult.code < receiverResult.code) {
-                                // 処理結果更新
-                                manageMap.put(receiver.MAIL_SEQ_NUM__c, receiverResult);
-                            }
-                        } else {
-                            manageMap.put(receiver.MAIL_SEQ_NUM__c, receiverResult);
-                        }
-                        lastMamageId = receiver.MAIL_SEQ_NUM__c;
-                        lastReceiverId = receiver.Id;
-                    } else {
-                        // 異常発生
-                        //isAbort = true;
-                        result = -1;
-                        error('フェータルエラーが発生しましたので、メール送信中止をしました。');
-                        break;
-                    }
-                }
-
-                // 送信結果更新を行う
-                Integer status = updateReceiver(receiverList, receiverMap);
-                if(status == -1) {
-                    // 更新エラー発生
-                    // TODO：処理中止
-                    result = -1;
-                } else {
-                    // 管理テーブル更新
-                    List<MailManage__c> manageList = getMailManageList(param.limitSize);
-                    status = updateManage(manageList, manageMap, lastMamageId, lastReceiverId);
-                    if(status == -1) {
-                        // 更新エラー発生
-                        // TODO:
-                        result = -1;
-                    }
-                }
-
-
-            } else {
-                info('メール送信データがありません。');
-            }
-        }
-        
-        
-        return result;
-    }
-
-    private static SfdcResult sendMail(MailReceiver__c receiver, Integer retryCount, Integer waitSeconds) {
-        SfdcResult result = null;
-        Messaging.SingleEmailMessage message = new Messaging.SingleEmailMessage();
-        if(receiver.SEND_ADR__c != null 
-           && (receiver.SEND_KBN__c == '1' || receiver.SEND_KBN__c == '2' || receiver.SEND_KBN__c == '3')) {
-            if(receiver.SEND_KBN__c == '1') {
-                // TO
-                message.setToAddresses(new String[] { receiver.SEND_ADR__c });
-            } else if(receiver.SEND_KBN__c == '2') {
-                // CC
-                message.setCcAddresses(new String[] { receiver.SEND_ADR__c });
-            } else if(receiver.SEND_KBN__c == '3') {
-                // BCC
-                message.setBccAddresses(new String[] { receiver.SEND_ADR__c });
-            }
-            
-            //message.optOutPolicy = 'FILTER';
-            message.setSenderDisplayName(receiver.MAIL_SEQ_NUM__r.FROM_NAME__c);
-            message.setReplyTo(receiver.MAIL_SEQ_NUM__r.REPLY_TO_ADDRESS__c);
-            message.subject = receiver.MAIL_SEQ_NUM__r.MAIL_SUBJECT__c;
-            message.plainTextBody = receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c;
-            Messaging.SingleEmailMessage[] messages = new List<Messaging.SingleEmailMessage>{message};
-            Messaging.SendEmailResult[] results = Messaging.sendEmail(messages);
-            result = new SfdcResult();
-            if (results[0].success) {
-                result.code = '1';
-                info('送信成功しました。[ Id: ' + receiver.Id + ' ]');
-            } else {
-                result.code = '9';
-                info('送信失敗しました。[ Id: ' + receiver.Id + ' ]');
-            }
-        }
-
-        return result;
-    }
-    
-    
     /**
-     * 処理対象データ件数を取得する。
+     * 送信宛先更新対象情報を取得する。
+     * @param lastSendId 処理された最後の宛先情報ID
      */
-    private static Integer getDataSize() {
-        Integer size  = [
-          Select
-            Count()
-          From
-            MailReceiver__c
-          Where
-            SEND_RESULT__c != '1'
-            And MAIL_SEQ_NUM__r.SEND_RESULT__c != '1' 
+    private static List<MailReceiver__c> getReceiverList(Id lastSendId) {
+        List<MailReceiver__c> receiverList = [
+            Select
+                Id,
+                SEND_RESULT__c
+            From
+                MailReceiver__c
+            Where
+                SEND_RESULT__c != '1'
+                And MAIL_SEQ_NUM__r.SEND_RESULT__c != '1'
+                And Id <= :lastSendId
+                And SEND_ADR__c != ''
         ];
-        
-        return size;
-        
-        //Integer pageSize = 0;
-        //String soql = 'SELECT Count(Id) FROM MailReceiver__c Where MAIL_SEQ_NUM__r.SEND_RESULT__c != \'1\'';
-        //Integer dataSize = database.countQuery(soql);
-        /**
-        if(dataSize > 0) {
-            pageSize = Math.mod(dataSize, limitSize) == 0 ? dataSize / limitSize : dataSize / limitSize + 1;
-        }
 
-**/
-        
-        //return database.countQuery(soql);
+        return receiverList;
     }
-    
-    private static List<MailReceiver__c> getFirstPage(Integer limitSize) {
-        List<MailReceiver__c> mailList = [
-            SELECT Id,
-              MAIL_SEQ_NUM__c,
-              //MAIL_SEQ_NUM__r.Id,
-              MAIL_SEQ_NUM__r.FROM_ADDRESS__c,
-              MAIL_SEQ_NUM__r.ENVELOPE_FROM_ADDRESS__c,
-              MAIL_SEQ_NUM__r.COMPANY_CODE__c,
-              MAIL_SEQ_NUM__r.FROM_NAME__c,
-              MAIL_SEQ_NUM__r.REPLY_TO_ADDRESS__c,
-              MAIL_SEQ_NUM__r.REPLY_TO_NAME__c,
-              MAIL_SEQ_NUM__r.MAIL_SUBJECT__c,
-              MAIL_SEQ_NUM__r.MAIL_BODY__c,
-              SEND_ADR__c,
-              Name,
-              SEND_KBN__c,
-              SEND_SEQ__c
-            From
-              MailReceiver__c
-            Where
-              MAIL_SEQ_NUM__r.SEND_RESULT__c != '1'
-            Order By
-              Id, MAIL_SEQ_NUM__c, SEND_KBN__c, SEND_SEQ__c
-            limit :limitSize
-        ];
-        
-        return mailList;
-    }
-    
-    private static List<MailReceiver__c> getNextPage(Integer limitSize, Id nextId) {
-        List<MailReceiver__c> mailList = [
-            SELECT Id,
-              MAIL_SEQ_NUM__c,
-              MAIL_SEQ_NUM__r.FROM_ADDRESS__c,
-              MAIL_SEQ_NUM__r.ENVELOPE_FROM_ADDRESS__c,
-              MAIL_SEQ_NUM__r.COMPANY_CODE__c,
-              MAIL_SEQ_NUM__r.FROM_NAME__c,
-              MAIL_SEQ_NUM__r.REPLY_TO_ADDRESS__c,
-              MAIL_SEQ_NUM__r.REPLY_TO_NAME__c,
-              MAIL_SEQ_NUM__r.MAIL_SUBJECT__c,
-              MAIL_SEQ_NUM__r.MAIL_BODY__c,
-              SEND_ADR__c,
-              Name,
-              SEND_KBN__c,
-              SEND_SEQ__c
-            From
-              MailReceiver__c
-            Where
-              MAIL_SEQ_NUM__r.SEND_RESULT__c != '1'
-              And Id > :nextId
-            Order By
-              Id, MAIL_SEQ_NUM__c, SEND_KBN__c, SEND_SEQ__c                                
-            limit :limitSize
-        ];
-        
-        return mailList;
-    }
-    
-    private static ClientMailInfo getClientMailInfo(MailReceiver__c receiver) {
-        ClientMailInfo info = new ClientMailInfo();
-        // ID
-        info.clientId = receiver.Id;
-        // メール送信ｓｅｑ
-        info.seqNo = receiver.MAIL_SEQ_NUM__c;
-        // メール送信元アドレス（Ｆｒｏｍ）
-        info.fromAddress = receiver.MAIL_SEQ_NUM__r.FROM_ADDRESS__c;
-        // メール送信元アドレス（ｅｎｖｅｌｏｐｅ）
-        info.envelopeFromAddress = receiver.MAIL_SEQ_NUM__r.ENVELOPE_FROM_ADDRESS__c;
-        // 会社コード
-        info.companyCode = receiver.MAIL_SEQ_NUM__r.COMPANY_CODE__c;
-        // メール送信元名称（Ｆｒｏｍ）
-        info.fromName = receiver.MAIL_SEQ_NUM__r.FROM_NAME__c;
-        // メール送信元アドレス（Ｒｅｐｌｙ－Ｔｏ）
-        info.replyToAddress = receiver.MAIL_SEQ_NUM__r.REPLY_TO_ADDRESS__c;
-        // メール送信元名称（Ｒｅｐｌｙ－Ｔｏ）
-        info.replayToName = receiver.MAIL_SEQ_NUM__r.REPLY_TO_NAME__c;
-        // メール送信題名
-        info.subject = receiver.MAIL_SEQ_NUM__r.MAIL_SUBJECT__c;
-        // メール送信本文
-        info.body = receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c;
-        // メール送信先
-        info.toAddress = receiver.SEND_ADR__c;
-        // メール送信先名称
-        info.toName = receiver.Name;
-        // メール送信先区分
-        info.sendKbn = receiver.SEND_KBN__c;
-        // メール送信先順序
-        info.sendSeq = receiver.SEND_SEQ__c;
-        
-        return info;
-    }
-    
+
     /**
-    private static void updateReceiver(List<SfdcParam> rSuccessList, List<SfdcParam> rFailureList) {
-        List<MailReceiver__c> receiverList;
-        Integer size = getDataSize();
-        if(size < 50000) {
-            // 一括更新
-            System.debug('一括更新');
-            receiverList = getReceiverList(null);
-            updateReceiver(receiverList, rSuccessList, rFailureList);
-        } else {
-            // 複数回更新
-            Integer times = Math.mod(size, 50000) == 0 ? size / 50000 : size / 50000 + 1;
-            for(Integer i = 0; i < times; i++) {
-                receiverList = getReceiverList(null);
-                updateReceiver(receiverList, rSuccessList, rFailureList);
-            }
-        }
-    }
-    **/
-    
+     * 送信宛先更新対象情報を更新する。
+     * @param receiverList 送信宛先情報
+     * @param rSuccessList 更新成功情報
+     * @param rFailureList 更新失敗情報
+     */
     private static Integer updateReceiver(List<MailReceiver__c> receiverList, List<SfdcParam> rSuccessList, List<SfdcParam> rFailureList) {
         Integer result = 0;
         if (receiverList != null && receiverList.size() > 0) {
             for(MailReceiver__c receiver: receiverList) {
-                //isExist = isReceiverExist(receiver, rSuccessList);
                 SfdcParam param = getReveiverParam(receiver, rSuccessList);
                 if(param != null) {
                     System.debug('送信成功更新');
@@ -361,10 +132,10 @@ global class SfdcMailWebService {
             try {
                 upsert receiverList;
             } catch (DmlException e) {
-                // TODO:異常処理
                 result = -1;
-                System.debug(e.getMessage());
-                System.debug(e.getCause());
+                error('送信宛先情報更新失敗しました。');
+                error(e.getMessage());
+                error(e.getCause());
             }
             
         }
@@ -372,48 +143,11 @@ global class SfdcMailWebService {
         return result;
     }
 
-    private static Integer updateReceiver(List<MailReceiver__c> receiverList, Map<Id, SfdcResult> resulMap) {
-        Integer result = 0;
-        if(receiverList != null && receiverList.size() > 0 && resulMap != null && !resulMap.isEmpty()) {
-            SfdcResult sfdcResult;
-            for(MailReceiver__c receiver: receiverList) {
-                sfdcResult = resulMap.get(receiver.Id);
-                if(sfdcResult != null) {
-                    receiver.SEND_RESULT__c = '' + sfdcResult.code;
-                    receiver.RETRY_CNT__c = sfdcResult.retryCount;
-                }
-            }
-
-            try {
-                upsert receiverList;
-            } catch (DmlException e) {
-                // 異常
-                result = -1;
-                System.debug(e.getMessage());
-                System.debug(e.getCause());
-            }
-        }
-
-        return result;
-    }
-    
-    private static List<MailReceiver__c> getReceiverList(Id lastSendId) {
-        List<MailReceiver__c> receiverList = [
-            Select
-                Id,
-                SEND_RESULT__c
-            From
-                MailReceiver__c
-            Where
-                SEND_RESULT__c != '1'
-                And MAIL_SEQ_NUM__r.SEND_RESULT__c != '1'
-                And Id <= :lastSendId
-        ];
-
-        return receiverList;
-    }
-
-    private static Integer getToDoCount(Id lastSendId) {
+    /**
+     * 処理していないデータ件数を取得する。
+     * @param lastSendId 前回送信情報ID
+     */
+    private static Integer getRemains(Id lastSendId) {
         Integer count = [
             Select
               Count() 
@@ -423,40 +157,18 @@ global class SfdcMailWebService {
               SEND_RESULT__c != '1'
               And MAIL_SEQ_NUM__r.SEND_RESULT__c !='1'
               And Id > :lastSendId
-        ];
-
-        return count;
-    }
-    
-    private static Integer getManageCount() {
-        Integer count = [
-            Select
-              Count() 
-            From
-              MailManage__c
-            Where
-              SEND_RESULT__c != '1'
+              And SEND_ADR__c != ''
         ];
 
         return count;
     }
 
-    private static List<MailManage__c> getMailManageList(Integer limitSize) {
-        List<MailManage__c> manageList = [
-            Select
-              Id,
-              SEND_RESULT__c,
-              RETRY_CNT__c
-            From
-              MailManage__c
-            Where
-              SEND_RESULT__c != '1'
-            Limit :limitSize
-        ];
-
-        return manageList;
-    }
-
+    /**
+     * 送信管理情報を更新する。
+     * @param manageList 送信管理情報
+     * @param successList 送信成功情報
+     * @param failureList 送信失敗情報
+     */
     private static Integer updateManage(List<MailManage__c> manageList, List<SfdcParam> successList, List<SfdcParam> failureList) {
         Integer result = 0;
         if (manageList != null && manageList.size() > 0) {
@@ -490,6 +202,222 @@ global class SfdcMailWebService {
         return result;
     }
 
+    /**
+     * 宛先更新情報を取得する。
+     * @param receiver 宛先更新情報
+     * @param paramList 更新情報
+     */
+    private static SfdcParam getReveiverParam(MailReceiver__c receiver, List<SfdcParam> paramList) {
+        SfdcParam param = null;
+        if(receiver != null && paramList != null && paramList.size() > 0) {
+            for(SfdcParam sp : paramList) {
+                if (receiver.Id == sp.Id) {
+                    param = sp;
+                    break;
+                }
+            }
+        }
+        
+        return param;
+    }
+
+    /**
+     * 更新情報を取得する。
+     * @param manage 管理情報
+     * @param paramList 更新情報
+     */
+    private static SfdcParam getManageParam(MailManage__c manage, List<SfdcParam> paramList) {
+        SfdcParam param = null;
+        if(manage != null && paramList != null && paramList.size() > 0) {
+            for(SfdcParam sp : paramList) {
+                if(sp.Id == manage.Id) {
+                    // 存在
+                    param = sp;
+                    break;
+                }
+            }
+        }
+
+        return param;
+    }
+
+    //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+    //         　　　 クライアントメール送信処理
+    //================================================================
+    // 　　　　　　　　　クラウドメール送信処理
+    //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+    
+    /**
+     * Saleforceでメール送信を行う。
+     * @param param 送信パラメータ
+     */
+    webService static Integer sendMail(SfdcParam param) {
+        Integer result = 0;
+        List<MailReceiver__c> receiverList;
+        List<ClientMailInfo> clientMailList = new List<ClientMailInfo>();
+        // 送信処理
+        if(param != null) {
+            // 送信対象データを取得する。
+            if(param.id == null) {
+                // 初回
+                receiverList = getFirstPage(param.limitSize);
+            } else {
+                // ２回目以後
+                receiverList = getNextPage(param.limitSize, param.id);
+            }
+
+            if(receiverList != null && receiverList.size() > 0) {
+                Id lastMamageId;
+                Id lastReceiverId;
+                Boolean isAbort = false;
+                SfdcResult receiverResult;
+                SfdcResult manageResult;
+                // 宛先送信結果情報
+                Map<Id, SfdcResult> receiverMap = new Map<Id, SfdcResult>();
+                // 管理送信結果情報
+                Map<Id, SfdcResult> manageMap = new Map<Id, SfdcResult>();
+                for(MailReceiver__c receiver: receiverList) {
+                    // メール送信を行う
+                    receiverResult = sendMail(receiver);
+                    if(receiverResult != null) {
+                        receiverMap.put(receiver.Id, receiverResult);
+                        manageResult = manageMap.get(receiver.MAIL_SEQ_NUM__c);
+                        if(manageResult != null) {
+                            // 既に存在
+                            if(manageResult.code < receiverResult.code) {
+                                // 処理結果更新
+                                manageMap.put(receiver.MAIL_SEQ_NUM__c, receiverResult);
+                            }
+                        } else {
+                            manageMap.put(receiver.MAIL_SEQ_NUM__c, receiverResult);
+                        }
+                        lastMamageId = receiver.MAIL_SEQ_NUM__c;
+                        lastReceiverId = receiver.Id;
+                    } else {
+                        // 異常発生
+                        //isAbort = true;
+                        result = -1;
+                        error('フェータルエラーが発生しましたので、メール送信中止をしました。');
+                        break;
+                    }
+                }
+
+                // 送信結果更新を行う
+                Integer status = updateReceiver(receiverList, receiverMap);
+                if(status == -1) {
+                    // 更新エラー発生
+                    result = -1;
+                } else {
+                    // 管理テーブル更新
+                    List<MailManage__c> manageList = getMailManageList(param.limitSize);
+                    status = updateManage(manageList, manageMap, lastMamageId, lastReceiverId);
+                    if(status == -1) {
+                        // 更新エラー発生
+                        // TODO:
+                        result = -1;
+                    }
+                }
+
+
+            } else {
+                info('メール送信データがありません。');
+            }
+        }
+        
+        
+        return result;
+    }
+
+    /**
+     * メール送信を行う。
+     * @param receiver 送信情報
+     */
+    private static SfdcResult sendMail(MailReceiver__c receiver) {
+        SfdcResult result = null;
+        Messaging.SingleEmailMessage message = new Messaging.SingleEmailMessage();
+        if(receiver.SEND_ADR__c != null 
+           && (receiver.SEND_KBN__c == '1' || receiver.SEND_KBN__c == '2' || receiver.SEND_KBN__c == '3')) {
+            if(receiver.SEND_KBN__c == '1') {
+                // TO
+                message.setToAddresses(new String[] { receiver.SEND_ADR__c });
+            } else if(receiver.SEND_KBN__c == '2') {
+                // CC
+                message.setCcAddresses(new String[] { receiver.SEND_ADR__c });
+            } else if(receiver.SEND_KBN__c == '3') {
+                // BCC
+                message.setBccAddresses(new String[] { receiver.SEND_ADR__c });
+            }
+            
+            // 送信名
+            message.setSenderDisplayName(receiver.MAIL_SEQ_NUM__r.FROM_NAME__c);
+            // 返信先
+            message.setReplyTo(receiver.MAIL_SEQ_NUM__r.REPLY_TO_ADDRESS__c);
+            // 件名
+            message.subject = receiver.MAIL_SEQ_NUM__r.MAIL_SUBJECT__c;
+            // 本文
+            message.plainTextBody = receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c;
+
+            // メール送信
+            Messaging.SingleEmailMessage[] messages = new List<Messaging.SingleEmailMessage>{message};
+            Messaging.SendEmailResult[] results = Messaging.sendEmail(messages);
+            result = new SfdcResult();
+            if (results[0].success) {
+                // 送信成功
+                result.code = 1;
+                info('送信成功しました。[ Id: ' + receiver.Id + ' ]');
+            } else {
+                // 送信失敗
+                result.code = 9;
+                info('送信失敗しました。[ Id: ' + receiver.Id + ' ]');
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 宛先送信結果情報を更新する。
+     * @param receiverList 宛先情報
+     * @param resulMap 送信結果情報
+     */
+    private static Integer updateReceiver(List<MailReceiver__c> receiverList, Map<Id, SfdcResult> resulMap) {
+        Integer result = 0;
+        if(receiverList != null && receiverList.size() > 0 && resulMap != null && !resulMap.isEmpty()) {
+            SfdcResult sfdcResult;
+            for(MailReceiver__c receiver: receiverList) {
+                sfdcResult = resulMap.get(receiver.Id);
+                if(sfdcResult != null) {
+                    receiver.SEND_RESULT__c = '' + sfdcResult.code;
+                    receiver.RETRY_CNT__c = sfdcResult.retryCount;
+                }
+            }
+
+            try {
+                upsert receiverList;
+            } catch (DmlException e) {
+                // 異常
+                result = -1;
+                error('送信宛先情報更新失敗しましたので処理中止する。');
+                // 更新失敗データ出力
+                error('下記宛先情報更新失敗しました。');
+                for(MailReceiver__c receiver : receiverList) {
+                    error('Id = ' + receiver.Id + ', SEND_RESULT__c = ' + receiver.SEND_RESULT__c);
+                }
+                error(e.getMessage());
+                error(e.getCause());
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 管理情報更新を行う。
+     * @param manageList 管理情報
+     * @param resultMap 送信結果情報
+     * @param lastMamageId 処理された最後の管理情報ID
+     * @param lastMamageId 処理された最後の宛先情報ID
+     */
     private static Integer updateManage(
         List<MailManage__c> manageList, Map<Id,SfdcResult> resultMap, Id lastMamageId, Id lastReceiverId) {
         Integer result = 0;
@@ -517,6 +445,11 @@ global class SfdcMailWebService {
             } catch (DmlException e) {
                 result = -1;
                 error('送信管理情報更新失敗しましたので処理中止する。');
+                // 更新失敗データ出力
+                error('下記送信管理情報更新失敗しました。');
+                for(MailManage__c manage : manageList) {
+                    error('Id = ' + manage.Id + ', SEND_RESULT__c = ' + manage.SEND_RESULT__c);
+                }
                 error(e.getMessage());
                 error(e.getCause());
             }
@@ -524,53 +457,14 @@ global class SfdcMailWebService {
             info('送信管理更新対象情報が存在しません。');
         }
 
-
         return result;
     }
-    
-    private static boolean isReceiverExist(MailReceiver__c receiver, List<SfdcParam> paramList) {
-        boolean isExist = false;
-        if(receiver != null && paramList != null && paramList.size() > 0) {
-            for(SfdcParam param : paramList) {
-                if (receiver.Id == param.Id) {
-                    isExist = true;
-                    break;
-                }
-            }
-        }
-        
-        return isExist;
-    }
 
-    private static SfdcParam getReveiverParam(MailReceiver__c receiver, List<SfdcParam> paramList) {
-        SfdcParam param = null;
-        if(receiver != null && paramList != null && paramList.size() > 0) {
-            for(SfdcParam sp : paramList) {
-                if (receiver.Id == sp.Id) {
-                    param = sp;
-                    break;
-                }
-            }
-        }
-        
-        return param;
-    }
-
-    private static SfdcParam getManageParam(MailManage__c manage, List<SfdcParam> paramList) {
-        SfdcParam param = null;
-        if(manage != null && paramList != null && paramList.size() > 0) {
-            for(SfdcParam sp : paramList) {
-                if(sp.Id == manage.Id) {
-                    // 存在
-                    param = sp;
-                    break;
-                }
-            }
-        }
-
-        return param;
-    }
-
+    /**
+     * メールを全部送信したかを判断する。
+     * @param manageId 管理情報ID
+     * @param receiverId 宛先情報ID
+     */
     private static Boolean isAllMailSent(Id manageId, Id receiverId) {
         Integer count = [
             Select
@@ -581,9 +475,139 @@ global class SfdcMailWebService {
               MAIL_SEQ_NUM__c = :manageId
               And Id > :receiverId
               And SEND_RESULT__c != '1'
+              And SEND_ADR__c != ''
         ];
 
         return count == 0;
+    }
+
+    //================================================================
+    //         　　　 メール送信処理（共通）
+    //================================================================
+    /**
+     * 初回送信情報を取得する。
+     * @param limitSize 制限件数
+     */
+    private static List<MailReceiver__c> getFirstPage(Integer limitSize) {
+        List<MailReceiver__c> mailList = [
+            SELECT Id,
+              MAIL_SEQ_NUM__c,
+              MAIL_SEQ_NUM__r.FROM_ADDRESS__c,
+              MAIL_SEQ_NUM__r.ENVELOPE_FROM_ADDRESS__c,
+              MAIL_SEQ_NUM__r.COMPANY_CODE__c,
+              MAIL_SEQ_NUM__r.FROM_NAME__c,
+              MAIL_SEQ_NUM__r.REPLY_TO_ADDRESS__c,
+              MAIL_SEQ_NUM__r.REPLY_TO_NAME__c,
+              MAIL_SEQ_NUM__r.MAIL_SUBJECT__c,
+              MAIL_SEQ_NUM__r.MAIL_BODY__c,
+              SEND_ADR__c,
+              Name,
+              SEND_KBN__c,
+              SEND_SEQ__c
+            From
+              MailReceiver__c
+            Where
+              SEND_ADR__c != ''
+              And MAIL_SEQ_NUM__r.SEND_RESULT__c != '1'
+            Order By
+              Id, MAIL_SEQ_NUM__c, SEND_KBN__c, SEND_SEQ__c
+            limit :limitSize
+        ];
+        
+        return mailList;
+    }
+    
+    /**
+     * 二回目以後の送信情報を取得する。
+     * @param limitSize 制限件数
+     * @param nextId 次回処理開始ID
+     */
+    private static List<MailReceiver__c> getNextPage(Integer limitSize, Id nextId) {
+        List<MailReceiver__c> mailList = [
+            SELECT Id,
+              MAIL_SEQ_NUM__c,
+              MAIL_SEQ_NUM__r.FROM_ADDRESS__c,
+              MAIL_SEQ_NUM__r.ENVELOPE_FROM_ADDRESS__c,
+              MAIL_SEQ_NUM__r.COMPANY_CODE__c,
+              MAIL_SEQ_NUM__r.FROM_NAME__c,
+              MAIL_SEQ_NUM__r.REPLY_TO_ADDRESS__c,
+              MAIL_SEQ_NUM__r.REPLY_TO_NAME__c,
+              MAIL_SEQ_NUM__r.MAIL_SUBJECT__c,
+              MAIL_SEQ_NUM__r.MAIL_BODY__c,
+              SEND_ADR__c,
+              Name,
+              SEND_KBN__c,
+              SEND_SEQ__c
+            From
+              MailReceiver__c
+            Where
+              SEND_ADR__c != ''
+              And MAIL_SEQ_NUM__r.SEND_RESULT__c != '1'
+              And Id > :nextId
+            Order By
+              Id, MAIL_SEQ_NUM__c, SEND_KBN__c, SEND_SEQ__c                                
+            limit :limitSize
+        ];
+        
+        return mailList;
+    }
+    
+    /**
+     * メール送信情報を変換する。
+     * @param receiver メール送信情報
+     */
+    private static ClientMailInfo getClientMailInfo(MailReceiver__c receiver) {
+        ClientMailInfo info = new ClientMailInfo();
+        // ID
+        info.clientId = receiver.Id;
+        // メール送信ｓｅｑ
+        info.seqNo = receiver.MAIL_SEQ_NUM__c;
+        // メール送信元アドレス（Ｆｒｏｍ）
+        info.fromAddress = receiver.MAIL_SEQ_NUM__r.FROM_ADDRESS__c;
+        // メール送信元アドレス（ｅｎｖｅｌｏｐｅ）
+        info.envelopeFromAddress = receiver.MAIL_SEQ_NUM__r.ENVELOPE_FROM_ADDRESS__c;
+        // 会社コード
+        info.companyCode = receiver.MAIL_SEQ_NUM__r.COMPANY_CODE__c;
+        // メール送信元名称（Ｆｒｏｍ）
+        info.fromName = receiver.MAIL_SEQ_NUM__r.FROM_NAME__c;
+        // メール送信元アドレス（Ｒｅｐｌｙ－Ｔｏ）
+        info.replyToAddress = receiver.MAIL_SEQ_NUM__r.REPLY_TO_ADDRESS__c;
+        // メール送信元名称（Ｒｅｐｌｙ－Ｔｏ）
+        info.replayToName = receiver.MAIL_SEQ_NUM__r.REPLY_TO_NAME__c;
+        // メール送信題名
+        info.subject = receiver.MAIL_SEQ_NUM__r.MAIL_SUBJECT__c;
+        // メール送信本文
+        info.body = receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c;
+        // メール送信先
+        info.toAddress = receiver.SEND_ADR__c;
+        // メール送信先名称
+        info.toName = receiver.Name;
+        // メール送信先区分
+        info.sendKbn = receiver.SEND_KBN__c;
+        // メール送信先順序
+        info.sendSeq = receiver.SEND_SEQ__c;
+        
+        return info;
+    }
+
+    /**
+     * 送信管理情報を取得する。
+     * @param limitSize 制限件数
+     */
+    private static List<MailManage__c> getMailManageList(Integer limitSize) {
+        List<MailManage__c> manageList = [
+            Select
+              Id,
+              SEND_RESULT__c,
+              RETRY_CNT__c
+            From
+              MailManage__c
+            Where
+              SEND_RESULT__c != '1'
+            Limit :limitSize
+        ];
+
+        return manageList;
     }
 
     private static void info(Object message) {
