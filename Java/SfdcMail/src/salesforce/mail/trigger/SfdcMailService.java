@@ -1,4 +1,4 @@
-package sfws.client.trigger;
+package salesforce.mail.trigger;
 
 import java.io.File;
 import java.io.IOException;
@@ -31,9 +31,9 @@ import com.sforce.ws.ConnectionException;
 import com.sforce.ws.ConnectorConfig;
 import com.sun.mail.smtp.SMTPMessage;
 
-import sfws.client.cmn.CmdAgent;
-import sfws.client.cmn.ICmdService;
-import sfws.client.util.CSVFileWriter;
+import salesforce.mail.cmn.CmdAgent;
+import salesforce.mail.cmn.ICmdService;
+import salesforce.mail.util.CSVFileWriter;
 
 public class SfdcMailService implements ICmdService {
 	//エンコード指定

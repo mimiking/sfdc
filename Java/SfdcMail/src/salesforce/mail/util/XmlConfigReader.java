@@ -1,4 +1,4 @@
-package sfws.client.util;
+package salesforce.mail.util;
 import java.io.File;
 import java.text.MessageFormat;
 import java.util.HashMap;

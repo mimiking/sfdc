@@ -1,8 +1,8 @@
-package sfws.client.cmn;
+package salesforce.mail.cmn;
 
 import com.sforce.ws.ConnectorConfig;
 
-import sfws.client.util.IFSConfigReader;
+import salesforce.mail.util.IFSConfigReader;
 
 /**
  * SalesForceサービス接続情報クラスクラス

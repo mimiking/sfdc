@@ -1,4 +1,4 @@
-package sfws.client.cmn;
+package salesforce.mail.cmn;
 
 import com.sforce.ws.ConnectorConfig;
 

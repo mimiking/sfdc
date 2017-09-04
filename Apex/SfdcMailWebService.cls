@@ -184,6 +184,14 @@ global class SfdcMailWebService {
             message.plainTextBody = receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c;
             Messaging.SingleEmailMessage[] messages = new List<Messaging.SingleEmailMessage>{message};
             Messaging.SendEmailResult[] results = Messaging.sendEmail(messages);
+            result = new SfdcResult();
+            if (results[0].success) {
+                result.code = '1';
+                info('送信成功しました。[ Id: ' + receiver.Id + ' ]');
+            } else {
+                result.code = '9';
+                info('送信失敗しました。[ Id: ' + receiver.Id + ' ]');
+            }
         }
 
         return result;

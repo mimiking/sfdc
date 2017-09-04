@@ -1,7 +1,7 @@
 /**
  * 
  */
-package sfws.client.cmn;
+package salesforce.mail.cmn;
 
 import org.apache.log4j.Logger;
 

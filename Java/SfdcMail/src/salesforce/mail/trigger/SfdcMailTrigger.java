@@ -1,9 +1,9 @@
-package sfws.client.trigger;
+package salesforce.mail.trigger;
 
 import org.apache.log4j.Logger;
 import org.apache.log4j.xml.DOMConfigurator;
 
-import sfws.client.cmn.CmdProcess;
+import salesforce.mail.cmn.CmdProcess;
 
 public class SfdcMailTrigger {
 	private static Logger logger =Logger.getLogger(SfdcMailTrigger.class);

@@ -1,4 +1,4 @@
-package sfws.client.trigger;
+package salesforce.mail.trigger;
 
 public class SfdcResult {
 	private int code;

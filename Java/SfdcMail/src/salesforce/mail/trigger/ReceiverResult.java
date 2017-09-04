@@ -1,4 +1,4 @@
-package sfws.client.trigger;
+package salesforce.mail.trigger;
 
 import java.math.BigDecimal;
 

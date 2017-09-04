@@ -1,10 +1,9 @@
-package sfws.client.trigger;
+package salesforce.mail.trigger;
 
 import org.apache.log4j.Logger;
 
-import sfws.client.cmn.CmdAgent;
-//import sfws.client.cmn.CmdProcess;
-import sfws.client.util.XmlConfigReader;
+import salesforce.mail.cmn.CmdAgent;
+import salesforce.mail.util.XmlConfigReader;
 
 public class SfdcMailAgent extends CmdAgent {
 	/** ログ部品*/
