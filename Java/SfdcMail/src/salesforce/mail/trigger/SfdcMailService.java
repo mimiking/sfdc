@@ -103,11 +103,8 @@ public class SfdcMailService implements ICmdService {
 				logger.info("クラウド送信開始します。");
 				// クラウド送信は毎日最大１０００件で制限している
 				SfdcParam params = new SfdcParam();
-				if (agent.getLimitSize() > 1000) {
-					params.setLimitSize(1000);
-				} else {
-					params.setLimitSize(agent.getLimitSize());
-				}
+				// 契約より、クラウド送信は毎日送信できる件数が異なる
+				params.setLimitSize(agent.getLimitSize());
 				do {
 					// 繰り返して
 					SfdcParam ret = connection.sendMail(params);
@@ -115,7 +112,7 @@ public class SfdcMailService implements ICmdService {
 					params.setId(ret.getId());
 				} while(params.getResult() != -1 && params.getId() != null);
 				
-				if(params.getResult() != -1) {
+				if(params.getResult() == -1) {
 					// 送信失敗
 					isSuccess = false;
 					logger.info("処理失敗しました、処理中止とする。");
