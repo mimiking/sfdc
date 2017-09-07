@@ -37,19 +37,22 @@ import salesforce.mail.util.CSVFileWriter;
 
 public class SfdcMailService implements ICmdService {
 	//エンコード指定
-	// TODO:設定ファイル
     private static final String ENCODE = "ISO-2022-JP";
     
+    /** 送信区分：　TO **/
     private static final String SEND_KBN_TO = "1";
+    /** 送信区分：　CC **/
     private static final String SEND_KBN_CC = "2";
+    /** 送信区分：　BCC **/
     private static final String SEND_KBN_BCC = "3";
-    
+    /** 送信結果区分：　成功 **/
     private static final int SEND_RESULT_SUCCESS = 1;
+    /** 送信結果区分：　失敗 **/
     private static final int SEND_RESULT_FAILURE = 9;
-    
+    /** 宛先送信結果情報 **/
     private Map<String, SfdcResult> receiverMap;
+    /** 管理送信結果情報 **/
     private Map<String, SfdcResult> manageMap;
-//	Map<String, Integer> retryMap = new HashMap<String, Integer>();
 	
 	/** ログイン接続　*/
 	static PartnerConnection loginCon;
@@ -95,13 +98,12 @@ public class SfdcMailService implements ICmdService {
 			isSuccess = !this.sendMail(agent);
 			
 			// 送信管理情報更新
-			this.updateManage(agent.getLimitSize());
+			isSuccess = isSuccess && this.updateManage(agent.getLimitSize()) == 0;
 			
 		} else if (SfdcMailAgent.MODE_CLOUD == agent.getMode()) {
 			// クラウド送信
 			try {
 				logger.info("クラウド送信開始します。");
-				// クラウド送信は毎日最大１０００件で制限している
 				SfdcParam params = new SfdcParam();
 				// 契約より、クラウド送信は毎日送信できる件数が異なる
 				params.setLimitSize(agent.getLimitSize());
@@ -110,6 +112,9 @@ public class SfdcMailService implements ICmdService {
 					SfdcParam ret = connection.sendMail(params);
 					params.setResult(ret.getResult());
 					params.setId(ret.getId());
+					
+					logger.info(String.format("クラウド送信結果： result: %s, id: %s", params.getResult(), params.getId()));
+					
 				} while(params.getResult() != -1 && params.getId() != null);
 				
 				if(params.getResult() == -1) {
@@ -156,7 +161,8 @@ public class SfdcMailService implements ICmdService {
         
         logger.info("ローカル送信開始します。");
         
-		final Properties properties = this.getMailProperties(agent);
+		// メール送信設定情報取得
+        final Properties properties = this.getMailProperties(agent);
 		//propsに設定した情報を使用して、sessionの作成
         final Session session = this.getSession(properties, agent.getSender(), agent.getSendPassword());
         do {
@@ -177,8 +183,11 @@ public class SfdcMailService implements ICmdService {
                 		}
                 	}
             		
+            		// 送信成功情報取得
             		successList = getSfdcParam(receiverMap, SEND_RESULT_SUCCESS);
+            		// 送信失敗情報取得
             		failureList = getSfdcParam(receiverMap, SEND_RESULT_FAILURE);
+            		// 送信結果更新
             		remains = connection.updateReceiverList(successList, failureList, params);
             		if(remains == -1) {
             			// 更新失敗、CSVファイル出力して処理中止する。
@@ -190,6 +199,7 @@ public class SfdcMailService implements ICmdService {
             	}
     		} catch (ConnectionException e) {
     			retriedCount++;
+    			// リトライ回数超えたら、処理中止
     			isAbort = retriedCount > agent.getRetryCount();
     			logger.error(e.getMessage());
     			logger.error(e.getCause());
@@ -314,6 +324,8 @@ public class SfdcMailService implements ICmdService {
             Transport.send(message);
             
             result.setCode(SEND_RESULT_SUCCESS);
+            
+            logger.info(String.format("メール送信しました。[ メール送信Seq：%s, 宛先ID： %s]", info.getSendSeq(), info.getClientId()));
             
         } catch (UnsupportedEncodingException e) {
             e.printStackTrace();

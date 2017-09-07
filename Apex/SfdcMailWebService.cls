@@ -158,12 +158,14 @@ global class SfdcMailWebService {
                     System.debug('送信成功更新');
                     // 成功
                     manage.SEND_RESULT__c = '1';
+                    manage.PROCESSED_DATE__c = DateTime.now();
                 } else {
                     // 失敗
                     param = getManageParam(manage, failureList);
                     if(param != null) {
                         manage.SEND_RESULT__c = '9';
                         manage.RETRY_CNT__c = param.retryCount;
+                        manage.PROCESSED_DATE__c = DateTime.now();
                     }
                 }
             }
@@ -171,7 +173,7 @@ global class SfdcMailWebService {
             try {
                 upsert manageList;
             } catch (DmlException e) {
-                // TODO:異常処理
+                // 異常
                 result = -1;
                 error(e.getMessage());
                 error(e.getCause());
@@ -295,7 +297,6 @@ global class SfdcMailWebService {
                     status = updateManage(manageList, manageMap, lastMamageId, lastReceiverId);
                     if(status == -1) {
                         // 更新エラー発生
-                        // TODO:
                         result = -1;
                     }
                 }
@@ -413,7 +414,6 @@ global class SfdcMailWebService {
         if(manageList != null && manageList.size() > 0 && resultMap != null && !resultMap.isEmpty()) {
             SfdcResult sfdcResult;
             for(MailManage__c manage : manageList) {
-                System.debug('manage.Id = ' + manage.Id + ', lastMamageId = ' + lastMamageId);
                 sfdcResult = resultMap.get(manage.Id);
                 if(sfdcResult != null) {
                     if(manage.Id == lastMamageId) {
@@ -426,6 +426,7 @@ global class SfdcMailWebService {
                         manage.SEND_RESULT__c = '' + sfdcResult.code;
                         manage.RETRY_CNT__c = sfdcResult.retryCount;
                     }
+                    manage.PROCESSED_DATE__c = DateTime.now();
                 }
             }
 
