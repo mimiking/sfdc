@@ -339,13 +339,21 @@ global class SfdcMailWebService {
             }
             
             // 送信名
-            message.setSenderDisplayName(receiver.MAIL_SEQ_NUM__r.FROM_NAME__c);
+            if(receiver.MAIL_SEQ_NUM__r.FROM_NAME__c != null) {
+                message.setSenderDisplayName(receiver.MAIL_SEQ_NUM__r.FROM_NAME__c);
+            }
             // 返信先
-            message.setReplyTo(receiver.MAIL_SEQ_NUM__r.REPLY_TO_ADDRESS__c);
+            if(receiver.MAIL_SEQ_NUM__r.REPLY_TO_ADDRESS__c != null) {
+                message.setReplyTo(receiver.MAIL_SEQ_NUM__r.REPLY_TO_ADDRESS__c);
+            }
             // 件名
-            message.subject = receiver.MAIL_SEQ_NUM__r.MAIL_SUBJECT__c;
+            if(receiver.MAIL_SEQ_NUM__r.MAIL_SUBJECT__c != null) {
+                message.subject = receiver.MAIL_SEQ_NUM__r.MAIL_SUBJECT__c;
+            }
             // 本文
-            message.plainTextBody = receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c;
+            if(receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c != null) {
+                message.plainTextBody = receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c;
+            }
 
             // メール送信
             Messaging.SingleEmailMessage[] messages = new List<Messaging.SingleEmailMessage>{message};
