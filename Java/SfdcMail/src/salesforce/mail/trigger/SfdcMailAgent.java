@@ -48,11 +48,20 @@ public class SfdcMailAgent extends CmdAgent {
 	 */
 	@Override
 	protected boolean validate() {
-		return this.getSmtpHost() != "" 
-		&& this.getSender() != ""
-		&& this.getSendPassword() != ""
-		&& this.getSfLoginId() != ""
-		&& this.getSfPassword() != "";
+		boolean isValid = true;
+		if (this.getMode() == MODE_LOCAL) {
+			isValid = this.getSmtpHost() != "";
+			isValid = isValid && this.getSender() != "";
+			isValid = isValid && this.getSendPassword() != "";
+			
+			if (this.getUseProxy() != 0) {
+				// プロクシー使用する場合
+				isValid = isValid && this.getProxyHost() != "";
+				isValid = isValid && this.getProxyPort() != 0;
+			}
+		}
+
+		return isValid;
 	}
 	
 	@Override
@@ -146,22 +155,6 @@ public class SfdcMailAgent extends CmdAgent {
 	}
 	
 	/**
-	 * SaleforceログインIDを取得する。
-	 * @return SaleforceログインID
-	 */
-	public String getSfLoginId() {
-		return this.appConfig.getSfLoginId();
-	}
-	
-	/**
-	 * Saleforceログインパスワードを取得する。
-	 * @return Saleforceログインパスワード
-	 */
-	public String getSfPassword() {
-		return this.appConfig.getSfPassword();
-	}
-	
-	/**
 	 * 制限件数を取得する。
 	 * @return 制限件数
 	 */
@@ -193,23 +186,29 @@ public class SfdcMailAgent extends CmdAgent {
 		return this.appConfig.getWaitSeconds();
 	}
 	
+	/**
+	 * プロクシー使用フラグを取得する。
+	 * @return プロクシー使用フラグ
+	 */
+	public int getUseProxy() {
+		return this.appConfig.getUseProxy();
+	}
 	
-//	/**
-//	 * 削除時の処理単位を取得
-//	 * @return
-//	 */
-//	public int getDelRecordUnit(){
-//		return this.appConfig.getDeleteLimit();
-//	}
-//	
-//	/**
-//	 * 更新、新規時の処理単位を取得
-//	 * @return
-//	 */
-//	public int getUpSertRecordUnit(){
-//		return this.appConfig.getUpSertLimit();
-//	}
-//
+	/**
+	 * プロクシーホストを取得する。
+	 * @return プロクシーホスト
+	 */
+	public String getProxyHost() {
+		return this.appConfig.getProxyHost();
+	}
+	
+	/**
+	 * プロクシーポートを取得する。
+	 * @return プロクシーポート
+	 */
+	public int getProxyPort() {
+		return this.appConfig.getProxyPort();
+	}
 //	/**
 //	 * メッセージを取得する
 //	 * @param id　メッセージID
@@ -219,9 +218,6 @@ public class SfdcMailAgent extends CmdAgent {
 //	public String getMessage(String id, String...ps){
 //		return this.appConfig.getMessage(id, ps);
 //	}
-//	
-//	public String getLeadRecordType(){
-//		return this.appConfig.getLeadRecordType();
-//	}
+
 
 }

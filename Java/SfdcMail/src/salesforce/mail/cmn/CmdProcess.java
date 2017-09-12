@@ -44,14 +44,14 @@ public class CmdProcess {
 			}
 			//接続が失敗になった場合
 			else{
-				logger.error("SalesForceサービスに接続できません。設定ファイル「" +ServiceConfig.settingFile + "]を確認ください。");
+				logger.error("SalesForceサービスに接続できません。設定ファイル「" +ServiceConfig.settingFile + "」を確認ください。");
 				ret=false;
 			}
 
 		}
 		//ログイン情報を取得失敗の場合、異常終了
 		else{
-			logger.error("「" +ServiceConfig.settingFile + "]を読み込むに失敗しました。");
+			logger.error("「" +ServiceConfig.settingFile + "」を読み込むに失敗しました。");
 			ret=false;
 		}
 		return ret;

@@ -1,5 +1,13 @@
 package salesforce.mail.cmn;
 
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.net.ProxySelector;
+import java.net.URI;
+import java.util.List;
+
+import org.apache.log4j.Logger;
+
 import com.sforce.ws.ConnectorConfig;
 
 import salesforce.mail.util.IFSConfigReader;
@@ -10,6 +18,8 @@ import salesforce.mail.util.IFSConfigReader;
  *
  */
 public class ServiceConfig {
+	/** ログ部品*/
+	private static Logger logger =Logger.getLogger(ServiceConfig.class);
 	
 	/** 設定情報オブジェクト*/
 	private static IFSConfigReader ifs;
@@ -17,12 +27,7 @@ public class ServiceConfig {
 	//外部から指定できるプロパティ
 	/** 設定情報ファイル名*/
 	public static String settingFile = "./config/ifs.ini";
-	/** プロクシー*/
-	public static String proxy="proxygate2.nic.nec.co.jp";
-	/** ポート*/
-	public static int port=8080;
-	
-	public static boolean useProxy=false;
+
 	/**
 	 * コンストラクタ
 	 */
@@ -47,9 +52,24 @@ public class ServiceConfig {
 			config.setPassword(ifs.getPassword());
 			config.setAuthEndpoint(ifs.getLoginURL());
 
-			if(useProxy){
-				config.setProxy(proxy, port);
+			//Proxyの設定
+			System.setProperty("java.net.useSystemProxies", "true");
+			List<Proxy> proxyList = null;
+			proxyList = ProxySelector.getDefault().select(URI.create(ifs.getLoginURL()));
+			if (proxyList != null && proxyList.size()>0){
+				Proxy proxy = proxyList.get(0);
+				InetSocketAddress addr = (InetSocketAddress) proxy.address();
+				
+				if (addr != null) {
+					logger.info("use system proxy: " + addr.getHostName() + ":" + addr.getPort());
+					config.setProxy(addr.getHostName(), addr.getPort());
+				}
+				else{
+					logger.info("No Proxy");
+				}
+
 			}
+
 			return config;
 
 		}

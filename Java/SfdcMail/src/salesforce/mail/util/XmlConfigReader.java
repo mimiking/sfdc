@@ -14,20 +14,9 @@ import org.w3c.dom.NodeList;
 
 /**
  * Appの設定情報クラス
- * @author M.Yi 2017/03/10
  *
  */
 public class XmlConfigReader {
-	
-//	/** 一回登録・更新制限件数キー*/
-//	public final String KEY_UPSERT_LIMIT ="IURecordsPerTrans";
-//	/** 一回削除制限件数キー*/
-//	public final String KEY_DELETE_LIMIT = "DelRecordsPerTrans";
-//	/** リード経過日数キー*/
-//	public final String KEY_LEAD_ELAPSED_DAYS ="LeadElapsedDays";
-//	/** タイプ名キー*/
-//	public final String KEY_RECORD_TYPE_NAME ="RecordTypeName";
-	
 	/** ログ部品　*/
 	private static Logger logger = Logger.getLogger(XmlConfigReader.class);
 	
@@ -41,10 +30,6 @@ public class XmlConfigReader {
 	private final String KEY_SEND_PWD = "SEND_PWD";
 	/** SSLフラグ **/
 	private final String KEY_SSL_FLAG = "SSL_FLAG";
-	/** SalesforceログインID **/
-	private final String KEY_SF_LOGIN_ID = "SF_LOGIN_ID";
-	/** Salesforceログインパスワード **/
-	private final String KEY_SF_PWD = "SF_LOGIN_PWD";
 	/** 処理制限件数 **/
 	private final String KEY_LIMIT_SIZE = "LIMIT_SIZE";
 	/** 処理モード **/
@@ -53,17 +38,12 @@ public class XmlConfigReader {
 	private final String KEY_RETRY_COUNT = "RETRY_CNT";
 	/**　待ち時間（秒） **/
 	private final String KEY_WAIT_SECONDS = "WAIT_SECONDS";
-	
-	
-//	/** 一回登録・更新制限件数(Default)*/
-//	public final int DEFAULT_UPSERT_LIMIT =40;
-//	/** 一回削除制限件数(Default)*/
-//	public final int DEFAULT_DELETE_LIMIT = 1000;
-//	/** リード経過日数(Default)*/
-//	public final int DEFAULT_LEAD_ELAPSED_DAYS=90;
-//	/** タイプ名(Default)*/
-//	public final String DEFAULT_RECORD_TYPE_NAME="リード（ホットリード）";
-		
+	/** プロクシー使用フラグ **/
+	private final String KEY_USE_PROXY = "USE_PROXY";
+	/** プロクシーホスト **/
+	private final String KEY_PROXY_HOST = "PROXY_HOST";
+	/** プロクシーポート **/
+	private final String KEY_PROXY_PORT = "PROXY_PORT";
 	/** AppConfigから読み込んだSetting情報*/
 	private static  Map<String, String> settings;
 	
@@ -100,7 +80,6 @@ public class XmlConfigReader {
 					// Key属性の値を取得
 					String key = add.getAttribute("key");
 					String value= add.getAttribute("value");
-					//System.out.println("name:" + name + ", key:" + key + ", value:" + value);
 					settings.put(key, value);
 				}
 				nodeList = rootElement.getElementsByTagName("setting");
@@ -109,9 +88,10 @@ public class XmlConfigReader {
 					// id属性の値を取得
 					String id = settingTag.getAttribute("name");
 					String message = settingTag.getTextContent().trim();
-					//System.out.println("id:" + id + ", message:" + message );
 					settings.put(id, message);
 				}
+				
+				logger.info("設定ファイルロード完了しました。");
 			}
 		}
 		catch (Exception e){
@@ -160,22 +140,6 @@ public class XmlConfigReader {
 	}
 	
 	/**
-	 * SaleforceログインIDを取得する。
-	 * @return SaleforceログインID
-	 */
-	public String getSfLoginId() {
-		return this.getValue(KEY_SF_LOGIN_ID, "", "SalesforceログインID");
-	}
-	
-	/**
-	 * Saleforceログインパスワードを取得する。
-	 * @return Saleforceログインパスワード
-	 */
-	public String getSfPassword() {
-		return this.getValue(KEY_SF_PWD, "", "Salesforceログインパスワード");
-	}
-	
-	/**
 	 * 制限件数を取得する。
 	 * @return 制限件数
 	 */
@@ -205,6 +169,30 @@ public class XmlConfigReader {
 	 */
 	public int getWaitSeconds() {
 		return this.getIntValue(KEY_WAIT_SECONDS, 60, "待ち時間");
+	}
+	
+	/**
+	 * プロクシー使用フラグを取得する。
+	 * @return プロクシー使用フラグ
+	 */
+	public int getUseProxy() {
+		return this.getIntValue(KEY_USE_PROXY, 0, "プロクシーフラグ");
+	}
+	
+	/**
+	 * プロクシーホストを取得する。
+	 * @return プロクシーホスト
+	 */
+	public String getProxyHost() {
+		return this.getValue(KEY_PROXY_HOST, "", "プロクシーホスト");
+	}
+	
+	/**
+	 * プロクシーポートを取得する。
+	 * @return プロクシーポート
+	 */
+	public int getProxyPort() {
+		return this.getIntValue(KEY_PROXY_HOST, 0, "プロクシーポート");
 	}
 	
 	/**

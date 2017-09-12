@@ -179,6 +179,7 @@ public class SfdcMailService implements ICmdService {
                 		params[0] = param;
                 		id = info.getClientId();
                 		if (isAbort) {
+                			logger.error(String.format("メール送信失敗しました。[ メール送信Seq：%s, 宛先ID： %s]", info.getSendSeq(), info.getClientId()));
                 			break;
                 		}
                 	}
@@ -207,7 +208,7 @@ public class SfdcMailService implements ICmdService {
         	
         } while(remains > 0 && !isAbort);
         
-        logger.info(String.format("ローカル送信完了しました。[ result: %s", isAbort));
+        logger.info(String.format("ローカル送信完了しました。[ result: %s", isAbort ? -1 : 0));
         
         return isAbort;
 	}
@@ -314,9 +315,16 @@ public class SfdcMailService implements ICmdService {
             }
             
             // 件名
-            message.setSubject(info.getSubject(), ENCODE);
+            if (isNotEmpty(info.getSubject())) {
+            	message.setSubject(info.getSubject(), ENCODE);
+            }
             // 本文
-            message.setText(info.getBody(), ENCODE);
+            if (isNotEmpty(info.getBody())) {
+            	message.setText(info.getBody(), ENCODE);
+            } else {
+            	message.setText("", ENCODE);
+            }
+            
             // 送信日時
             message.setSentDate(new Date());
             
@@ -325,7 +333,7 @@ public class SfdcMailService implements ICmdService {
             
             result.setCode(SEND_RESULT_SUCCESS);
             
-            logger.info(String.format("メール送信しました。[ メール送信Seq：%s, 宛先ID： %s]", info.getSendSeq(), info.getClientId()));
+            logger.info(String.format("メール送信成功しました。[ メール送信Seq：%s, 宛先ID： %s]", info.getSendSeq(), info.getClientId()));
             
         } catch (UnsupportedEncodingException e) {
             e.printStackTrace();
@@ -371,7 +379,13 @@ public class SfdcMailService implements ICmdService {
             props.setProperty("mail.smtp.socketFactory.port", "587");
         }
         
-
+        if(agent.getUseProxy() == 1) {
+        	// プロクシー設定
+        	props.setProperty("proxySet", "true");
+        	props.setProperty("socksProxyHost", agent.getProxyHost());
+        	props.setProperty("socksProxyPort", String.valueOf(agent.getProxyPort()));
+        }
+        
         props.setProperty("mail.debug", "true");
 		
 		return props;
