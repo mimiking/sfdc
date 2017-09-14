@@ -8,12 +8,17 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.Properties;
 
+import org.apache.log4j.Logger;
+
 /**
  * ifs.iniファイルのWrapperクラス
  * @author M.Yi　2017/03/08
  *
  */
 public class IFSConfigReader {
+	
+	/** ログ部品　*/
+	private static Logger logger = Logger.getLogger(IFSConfigReader.class);
 	
 	/** ユーザID キー*/
 	private static String KEY_USER_ID="[MAGIC_LOGICAL_NAMES]IFS_SFDC_USER";
@@ -67,19 +72,14 @@ public class IFSConfigReader {
 			//ユーザIDを取得する
 			if(conf.containsKey(KEY_USER_ID)){
 				userID = conf.getProperty(KEY_USER_ID);
-
 			}
 			//パスワードを取得する。
 			if(conf.containsKey(KEY_PASSWORD)){
-//				String tempword = conf.getProperty(KEY_PASSWORD);
-//				if(null != decryptTool && !"".equals(decryptTool)){
-//					password = decrypt(decryptTool, tempword);
-//				}
 				password = conf.getProperty(KEY_PASSWORD);
 			}
 			
 		} catch (Exception e) {
-			// TODO 自動生成された catch ブロック
+			logger.error(e);
 			e.printStackTrace();
 		} 
 

@@ -192,11 +192,12 @@ public class SfdcMailService implements ICmdService {
             		remains = connection.updateReceiverList(successList, failureList, params);
             		if(remains == -1) {
             			// 更新失敗、CSVファイル出力して処理中止する。
+            			logger.error("更新失敗、CSVファイル出力して処理中止する。");
             			isAbort = true;
-            			this.writeCsv(successList, failureList);
+            			this.writeCsv(successList, failureList, "receiver");
             		}
             	} else {
-            		logger.info(String.format("送信対象データが存在しません。 [id=%s]", id));
+            		logger.info(String.format("送信対象データが存在しま。 [id=%s]", id));
             	}
     		} catch (ConnectionException e) {
     			retriedCount++;
@@ -208,7 +209,7 @@ public class SfdcMailService implements ICmdService {
         	
         } while(remains > 0 && !isAbort);
         
-        logger.info(String.format("ローカル送信完了しました。[ result: %s", isAbort ? -1 : 0));
+        logger.info(String.format("ローカル送信完了しました。[ result: %s ]", isAbort ? -1 : 0));
         
         return isAbort;
 	}
@@ -252,22 +253,21 @@ public class SfdcMailService implements ICmdService {
     			retriedCount++;
     			this.updateResult(receiverMap, info.getClientId(), false);
     			this.updateResult(manageMap, info.getSeqNo(), false);
-    			if (retriedCount <= retryCount) {
-	    			try {
-	    				// Wait
-						Thread.sleep(waitSeconds * 1000);
-					} catch (InterruptedException e) {
-						logger.error(e.getMessage());
-						logger.error(e.getCause());
-					}
-    			} else {
-    				// リトライ上限回数を超えたので、処理中止する。
-    				logger.info("処理回数はリトライ上限回数を超えたので、処理中止にしました。");
-    				isAbort = true;
-    				break;
-    			}
+    			try {
+    				// Wait
+					Thread.sleep(waitSeconds * 1000);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+					logger.error(e.getCause());
+				}
     		}
     		result = receiverMap.get(info.getClientId());
+		}
+		
+		if(result.getRetryCount() == retriedCount && result.getCode() != 1) {
+			// リトライ上限回数を超えたので、処理中止する。
+			logger.info("処理回数はリトライ上限回数を超えたので、処理中止にしました。");
+			isAbort = true;
 		}
 		
 		return isAbort;
@@ -496,7 +496,7 @@ public class SfdcMailService implements ICmdService {
         	
         	if(result == -1) {
     			// CSVファイル出力
-    			writeCsv(successList, failureList);
+    			writeCsv(successList, failureList, "manage");
     		}
     	} else {
     		logger.info("更新管理情報が存在しません。");
@@ -514,9 +514,14 @@ public class SfdcMailService implements ICmdService {
 	 * @param successList 送信成功情報
 	 * @param failureList 送信失敗情報
 	 */
-	private void writeCsv(SfdcParam[] successList, SfdcParam[] failureList) {
+	private void writeCsv(SfdcParam[] successList, SfdcParam[] failureList, String prefix) {
 		if(successList != null || failureList != null) {
-			String fileName = String.format("./output/update_failure_data_%s.csv", new Date().getTime());
+			logger.error("更新失敗データをCSVファイルに出力する。");
+			File dir = new File("./output");
+			if(!dir.exists()) {
+				dir.mkdirs();
+			}
+			String fileName = String.format("./output/%s_update_failure_data_%s.csv", prefix, new Date().getTime());
 			CSVFileWriter fileWritter = new CSVFileWriter(new File(fileName));
 			writeCsv(fileWritter, successList);
 			writeCsv(fileWritter, failureList);
@@ -532,12 +537,15 @@ public class SfdcMailService implements ICmdService {
 		try {
 			List<String> itemList = null;
 			if(paramList != null && paramList.length > 0) {
+				fileWritter.open();
 				for(SfdcParam param: paramList) {
 					itemList = new ArrayList<String>();
 					itemList.add(param.getId());
 					itemList.add(String.valueOf(param.getRetryCount()));
+					fileWritter.writeLine(itemList);
 				}
-				fileWritter.writeLine(itemList);
+				
+				fileWritter.close();
 			}
 		} catch (IOException e) {
 			logger.error("CSVファイル出力失敗しました。");

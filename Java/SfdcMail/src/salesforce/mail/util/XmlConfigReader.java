@@ -192,7 +192,7 @@ public class XmlConfigReader {
 	 * @return プロクシーポート
 	 */
 	public int getProxyPort() {
-		return this.getIntValue(KEY_PROXY_HOST, 0, "プロクシーポート");
+		return this.getIntValue(KEY_PROXY_PORT, 0, "プロクシーポート");
 	}
 	
 	/**

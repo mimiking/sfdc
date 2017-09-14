@@ -73,11 +73,30 @@ global class SfdcMailWebService {
         Integer result = 0;
         if(paramList != null && paramList.size() > 0) {
             Integer limitSize = paramList[0].limitSize;
+            Id minManageId = null;
+            if (successList != null && successList.size() > 0) {
+                minManageId = successList.get(0).id;
+                for(SfdcParam sp: successList) {
+                    if (minManageId > sp.id) {
+                        minManageId = sp.id;
+                    }
+                }
+            }
+            if (failureList != null && failureList.size() > 0) {
+                minManageId = minManageId == null ? failureList.get(0).id : minManageId;
+                for(SfdcParam sp: failureList) {
+                    if (minManageId > sp.id) {
+                        minManageId = sp.id;
+                    }
+                }
+            }
             // 更新対象情報取得
-            List<MailManage__c> manageList = getMailManageList(limitSize);
-            if(manageList != null && manageList.size() > 0) {
-                // 対象データ更新
-                result = updateManage(manageList, successList, failureList);
+            if (minManageId != null) {
+                List<MailManage__c> manageList = getMailManageList(minManageId, limitSize);
+                if(manageList != null && manageList.size() > 0) {
+                    // 対象データ更新
+                    result = updateManage(manageList, successList, failureList);
+                }
             }
         }
 
@@ -152,15 +171,17 @@ global class SfdcMailWebService {
     private static Integer updateManage(List<MailManage__c> manageList, List<SfdcParam> successList, List<SfdcParam> failureList) {
         Integer result = 0;
         if (manageList != null && manageList.size() > 0) {
+            info('管理情報更新開始します。[size: ' + manageList.size() + ' ]');
             for(MailManage__c manage: manageList) {
                 SfdcParam param = getManageParam(manage, successList);
                 if(param != null) {
-                    System.debug('送信成功更新');
+                    info('送信成功管理情報更新：[ Id: ' + manage.Id + ', result: 1 ]');
                     // 成功
                     manage.SEND_RESULT__c = '1';
                     manage.PROCESSED_DATE__c = DateTime.now();
                 } else {
                     // 失敗
+                    info('送信成功管理情報更新情報設定：[ Id: ' + manage.Id + ', result: 1 ]');
                     param = getManageParam(manage, failureList);
                     if(param != null) {
                         manage.SEND_RESULT__c = '9';
@@ -180,7 +201,9 @@ global class SfdcMailWebService {
             }
             
         }
-
+        info('管理情報更新完了しました。[ result: ' + result + ' ]');
+        
+	
         return result;
     }
 
@@ -251,6 +274,7 @@ global class SfdcMailWebService {
             }
 
             if(receiverList != null && receiverList.size() > 0) {
+                Id minManageId = receiverList.get(0).MAIL_SEQ_NUM__c;
                 Id lastMamageId;
                 Id lastReceiverId;
                 Boolean isAbort = false;
@@ -270,6 +294,7 @@ global class SfdcMailWebService {
                             // 既に存在
                             if(manageResult.code < receiverResult.code) {
                                 // 処理結果更新
+                                info('処理結果：[ code: ' + receiverResult.code + ' ]');
                                 manageMap.put(receiver.MAIL_SEQ_NUM__c, receiverResult);
                             }
                         } else {
@@ -279,7 +304,6 @@ global class SfdcMailWebService {
                         lastReceiverId = receiver.Id;
                     } else {
                         // 異常発生
-                        //isAbort = true;
                         result = -1;
                         error('フェータルエラーが発生しましたので、メール送信中止をしました。');
                         break;
@@ -293,7 +317,7 @@ global class SfdcMailWebService {
                     result = -1;
                 } else {
                     // 管理テーブル更新
-                    List<MailManage__c> manageList = getMailManageList(param.limitSize);
+                    List<MailManage__c> manageList = getMailManageList(minManageId, param.limitSize);
                     status = updateManage(manageList, manageMap, lastMamageId, lastReceiverId);
                     if(status == -1) {
                         // 更新エラー発生
@@ -353,20 +377,28 @@ global class SfdcMailWebService {
             // 本文
             if(receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c != null) {
                 message.plainTextBody = receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c;
+            } else {
+                message.plainTextBody = '';
             }
 
             // メール送信
-            Messaging.SingleEmailMessage[] messages = new List<Messaging.SingleEmailMessage>{message};
-            Messaging.SendEmailResult[] results = Messaging.sendEmail(messages);
-            result = new SfdcResult();
-            if (results[0].success) {
-                // 送信成功
-                result.code = 1;
-                info('送信成功しました。[ Id: ' + receiver.Id + ' ]');
-            } else {
-                // 送信失敗
+            try {
+                Messaging.SingleEmailMessage[] messages = new List<Messaging.SingleEmailMessage>{message};
+                Messaging.SendEmailResult[] results = Messaging.sendEmail(messages);
+                result = new SfdcResult();
+                if (results[0].success) {
+                    // 送信成功
+                    result.code = 1;
+                    info('送信成功しました。[ Id: ' + receiver.Id + ' ]');
+                } else {
+                    // 送信失敗
+                    result.code = 9;
+                    info('送信失敗しました。[ Id: ' + receiver.Id + ' ]');
+                }
+            } catch(Exception e) {
+                result = new SfdcResult();
                 result.code = 9;
-                info('送信失敗しました。[ Id: ' + receiver.Id + ' ]');
+                info('異常が発生しましたので、メール送信失敗しました。[ Id: ' + receiver.Id + ' ]');
             }
         }
 
@@ -421,6 +453,8 @@ global class SfdcMailWebService {
         Integer result = 0;
         if(manageList != null && manageList.size() > 0 && resultMap != null && !resultMap.isEmpty()) {
             SfdcResult sfdcResult;
+            info('更新対象管理情報：[ size: ' + manageList.size() + ' ]');
+            info('処理結果情報：[ size: ' + resultMap.size() + ' ]');
             for(MailManage__c manage : manageList) {
                 sfdcResult = resultMap.get(manage.Id);
                 if(sfdcResult != null) {
@@ -435,6 +469,7 @@ global class SfdcMailWebService {
                         manage.RETRY_CNT__c = sfdcResult.retryCount;
                     }
                     manage.PROCESSED_DATE__c = DateTime.now();
+                    info('管理情報更新：[ Id: ' + manage.Id + ', result: ' + manage.SEND_RESULT__c + ' ]');
                 }
             }
 
@@ -592,7 +627,7 @@ global class SfdcMailWebService {
      * 送信管理情報を取得する。
      * @param limitSize 制限件数
      */
-    private static List<MailManage__c> getMailManageList(Integer limitSize) {
+    private static List<MailManage__c> getMailManageList(Id startId, Integer limitSize) {
         List<MailManage__c> manageList = [
             Select
               Id,
@@ -602,6 +637,7 @@ global class SfdcMailWebService {
               MailManage__c
             Where
               SEND_RESULT__c != '1'
+              And Id >= :startId
             Limit :limitSize
         ];
 
