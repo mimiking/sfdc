@@ -384,7 +384,7 @@ global class SfdcMailWebService {
                 result = new SfdcResult();
                 if (results[0].success) {
                     // 送信成功
-                    result.code = 1;
+                    result.code = 0;
                     info('送信成功しました。[ Id: ' + receiver.Id + ' ]');
                 } else {
                     // 送信失敗
@@ -497,7 +497,7 @@ global class SfdcMailWebService {
                         manage.RETRY_CNT__c = sfdcResult.retryCount;
                     }
                     manage.PROCESSED_DATE__c = DateTime.now();
-                    info('管理情報更新：[ Id: ' + manage.Id + ', result: ' + manage.SEND_RESULT__c + ' ]');
+                    info('管理情報更新：[ Id: ' + manage.Id + ', 送信結果: ' + manage.SEND_RESULT__c + ' ]');
                 }
             }
 
