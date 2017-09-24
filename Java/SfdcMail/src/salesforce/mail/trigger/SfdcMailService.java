@@ -95,15 +95,23 @@ public class SfdcMailService implements ICmdService {
 			manageMap = new HashMap<String, SfdcResult>();
 			
 			// ローカル送信
-			isSuccess = !this.sendMail(agent);
+			int status = this.sendMail(agent);
 			
-			// 送信管理情報更新
-			isSuccess = isSuccess && this.updateManage(agent.getLimitSize()) == 0;
+			if(status != -1) {
+				// 送信管理情報更新
+				int mStatus = this.updateManage(agent.getLimitSize());
+				if( mStatus != 0) {
+					status = mStatus;
+				}
+			}
+			
+			isSuccess = status == 0;
 			
 		} else if (SfdcMailAgent.MODE_CLOUD == agent.getMode()) {
 			// クラウド送信
 			try {
 				logger.info("クラウド送信開始します。");
+				int status = 0;
 				SfdcParam params = new SfdcParam();
 				// 契約より、クラウド送信は毎日送信できる件数が異なる
 				params.setLimitSize(agent.getLimitSize());
@@ -114,16 +122,21 @@ public class SfdcMailService implements ICmdService {
 					params.setId(ret.getId());
 					
 					logger.info(String.format("クラウド送信結果： result: %s, id: %s", params.getResult(), params.getId()));
+					if (params.getResult() != 0) {
+						status = params.getResult();
+					}
 					
+					logger.info("=============== Apex Log Output Start ===============");
+            		this.getDebugLog();
+            		logger.info("=============== Apex Log Output End ===============");
 				} while(params.getResult() != -1 && params.getId() != null);
 				
-				if(params.getResult() == -1) {
+				if(status != 0) {
 					// 送信失敗
 					isSuccess = false;
-					logger.info("処理失敗しました、処理中止とする。");
 				}
 				
-				logger.info("クラウド送信完了しました。");
+				logger.info(String.format("クラウド送信完了しました。 [ result: %s ]", params.getResult()));
 			} catch (ConnectionException e) {
 				logger.error("クラウド送信失敗しました。");
 				logger.error(e.getMessage());
@@ -149,8 +162,9 @@ public class SfdcMailService implements ICmdService {
 	 * @param agent
 	 * @return 処理結果
 	 */
-	private boolean sendMail(SfdcMailAgent agent) {
+	private int sendMail(SfdcMailAgent agent) {
 		boolean isAbort = false;
+		int status = 0;
         int remains = 0;
         int retriedCount = 0;
         SfdcParam[] params = new SfdcParam[1];
@@ -174,11 +188,13 @@ public class SfdcMailService implements ICmdService {
             		param = new SfdcParam();
             		// 送信
             		for(ClientMailInfo info : mailInfoList) {
-            			isAbort = this.sendMail(session, info, agent.getRetryCount(), agent.getWaitSeconds());
+            			int tempStatus = this.sendMail(session, info, agent.getRetryCount(), agent.getWaitSeconds());
+            			status = tempStatus != 0 ? tempStatus : status;
                 		param.setId(info.getClientId());
                 		params[0] = param;
                 		id = info.getClientId();
-                		if (isAbort) {
+                		if (tempStatus == -1) {
+                			isAbort = true;
                 			logger.error(String.format("メール送信失敗しました。[ メール送信Seq：%s, 宛先ID： %s]", info.getSendSeq(), info.getClientId()));
                 			break;
                 		}
@@ -194,24 +210,30 @@ public class SfdcMailService implements ICmdService {
             			// 更新失敗、CSVファイル出力して処理中止する。
             			logger.error("更新失敗、CSVファイル出力して処理中止する。");
             			isAbort = true;
+            			status = -1;
             			this.writeCsv(successList, failureList, "receiver");
             		}
+            		logger.info("=============== Apex Log Output Start ===============");
+            		this.getDebugLog();
+            		logger.info("=============== Apex Log Output End ===============");
             	} else {
-            		logger.info(String.format("送信対象データが存在しま。 [id=%s]", id));
+            		logger.info(String.format("送信対象データが存在しません。 [id=%s]", id));
             	}
+            	
     		} catch (ConnectionException e) {
     			retriedCount++;
     			// リトライ回数超えたら、処理中止
     			isAbort = retriedCount > agent.getRetryCount();
+    			status = isAbort ? -1 : status;
     			logger.error(e.getMessage());
     			logger.error(e.getCause());
     		}
         	
         } while(remains > 0 && !isAbort);
         
-        logger.info(String.format("ローカル送信完了しました。[ result: %s ]", isAbort ? -1 : 0));
+        logger.info(String.format("ローカル送信完了しました。[ result: %s ]", status));
         
-        return isAbort;
+        return status;
 	}
 	
 	/**
@@ -237,40 +259,46 @@ public class SfdcMailService implements ICmdService {
 	 * @param waitSeconds 待ち時間（秒）
 	 * @return
 	 */
-	private boolean sendMail(Session session, ClientMailInfo info, int retryCount, int waitSeconds) {
-		boolean isAbort = false;
+	private int sendMail(Session session, ClientMailInfo info, int retryCount, int waitSeconds) {
+		int status = 0;
 		int retriedCount = 0;
 		SfdcResult result = new SfdcResult(SEND_RESULT_FAILURE);
-		while(result.getCode() == SEND_RESULT_FAILURE && result.getRetryCount() < retryCount) {
-			result = this.sendMail(session, info);
-    		if (result.getCode() == SEND_RESULT_SUCCESS) {
-    			// 送信成功
-    			retriedCount = 0;
-    			this.updateResult(receiverMap, info.getClientId(), true);
-    			this.updateResult(manageMap, info.getSeqNo(), true);
-    		} else {
-    			// 送信失敗
-    			retriedCount++;
-    			this.updateResult(receiverMap, info.getClientId(), false);
-    			this.updateResult(manageMap, info.getSeqNo(), false);
-    			try {
-    				// Wait
-					Thread.sleep(waitSeconds * 1000);
-				} catch (InterruptedException e) {
-					logger.error(e.getMessage());
-					logger.error(e.getCause());
-				}
-    		}
-    		result = receiverMap.get(info.getClientId());
+		if(this.checkSend(info)) {
+			while(result.getCode() == SEND_RESULT_FAILURE && result.getRetryCount() < retryCount) {
+				result = this.sendMail(session, info);
+	    		if (result.getCode() == SEND_RESULT_SUCCESS) {
+	    			// 送信成功
+	    			retriedCount = 0;
+	    			this.updateResult(receiverMap, info.getClientId(), true);
+	    			this.updateResult(manageMap, info.getSeqNo(), true);
+	    		} else {
+	    			// 送信失敗
+	    			retriedCount++;
+	    			this.updateResult(receiverMap, info.getClientId(), false);
+	    			this.updateResult(manageMap, info.getSeqNo(), false);
+	    			try {
+	    				// Wait
+						Thread.sleep(waitSeconds * 1000);
+					} catch (InterruptedException e) {
+						logger.error(e.getMessage());
+						logger.error(e.getCause());
+					}
+	    		}
+	    		result = receiverMap.get(info.getClientId());
+			}
+			
+			if(result.getRetryCount() == retriedCount && result.getCode() != 1) {
+				// リトライ上限回数を超えたので、処理中止する。
+				logger.info("処理回数はリトライ上限回数を超えたので、処理中止にしました。");
+				status = -1;
+			}
+		} else {
+			status = 9;
+			this.updateResult(receiverMap, info.getClientId(), false);
+			this.updateResult(manageMap, info.getSeqNo(), false);
 		}
 		
-		if(result.getRetryCount() == retriedCount && result.getCode() != 1) {
-			// リトライ上限回数を超えたので、処理中止する。
-			logger.info("処理回数はリトライ上限回数を超えたので、処理中止にしました。");
-			isAbort = true;
-		}
-		
-		return isAbort;
+		return status;
 	}
 	
 	/**
@@ -315,15 +343,10 @@ public class SfdcMailService implements ICmdService {
             }
             
             // 件名
-            if (isNotEmpty(info.getSubject())) {
-            	message.setSubject(info.getSubject(), ENCODE);
-            }
+            message.setSubject(info.getSubject(), ENCODE);
+            
             // 本文
-            if (isNotEmpty(info.getBody())) {
-            	message.setText(info.getBody(), ENCODE);
-            } else {
-            	message.setText("", ENCODE);
-            }
+            message.setText(info.getBody(), ENCODE);
             
             // 送信日時
             message.setSentDate(new Date());
@@ -345,9 +368,44 @@ public class SfdcMailService implements ICmdService {
         	// SMTPサーバへの接続失敗
         	logger.error(e.getMessage());
             e.printStackTrace();
-        } 
+        }
 
 		return result;
+	}
+	
+	
+	/**
+	 * 送信チェックを行う。
+	 * @param info メール送信情報
+	 * @return チェック結果
+	 */
+	private boolean checkSend(ClientMailInfo info) {
+		boolean isValid = true;
+		String sendKbn = info.getSendKbn();
+		if(!isNotEmpty(info.getFromAddress())) {
+            isValid = false;
+            logger.error("送信元アドレスが指定されないので、送信処理をスキップしました。");
+        }
+        
+        if(isValid && !SEND_KBN_TO.equals(sendKbn) && !SEND_KBN_CC.equals(sendKbn) && !SEND_KBN_BCC.equals(sendKbn)) {
+            isValid = false;
+            logger.error("送信区分が正しくないため、送信処理をスキップしました。");
+        }
+        
+        // 件名
+        if(isValid && !isNotEmpty(info.getSubject())) {
+            // 件名なし、送信不可にする
+            isValid = false;
+            logger.error("件名が指定されないので、送信処理をスキップしました。");
+        }
+        // 本文
+        if(isValid && !isNotEmpty(info.getBody())) {
+            // 本文なし、送信不可にする
+            isValid = false;
+            logger.error("本文が指定されないので、送信処理をスキップしました。");                                                                                         
+        }
+		
+		return isValid;
 	}
 	
 	
@@ -477,14 +535,39 @@ public class SfdcMailService implements ICmdService {
     		SfdcParam[] param = new SfdcParam[1];
         	limitParam.setLimitSize(limitSize);
         	param[0] = limitParam;
-        	int count = size % limitSize == 0 ? size / limitSize : size / limitSize + 1;
+        	int count = 0;
         	try {
-        		for(int i = 0; i < count; i++) {
-        			// 繰り返して更新する
-					result = connection.updateManageList(successList, failureList, param);
-        			if (result == -1) {
-        				// 異常発生、処理中止
-        				break;
+        		// 成功情報更新
+        		if(successList.length > 0) {
+        			size = successList.length;
+        			count = size % limitSize == 0 ? size / limitSize : size / limitSize + 1;
+        			for(int i = 0; i < count; i++) {
+        				// 繰り返して更新する
+        				SfdcParam[] updateList = this.getUpdateList(successList, limitSize, i);
+        				if (updateList != null) {
+        					result = connection.updateManageList(updateList, null, param);
+                			if (result == -1) {
+                				// 異常発生、処理中止
+                				break;
+                			}
+        				}
+    					
+        			}
+        		}
+        		
+        		if(result != -1 && failureList.length > 0) {
+        			size = failureList.length;
+        			count = size % limitSize == 0 ? size / limitSize : size / limitSize + 1;
+        			for(int i = 0; i < count; i++) {
+        				SfdcParam[] updateList = this.getUpdateList(failureList, limitSize, i);
+        				// 繰り返して更新する
+        				if (updateList != null) {
+        					result = connection.updateManageList(null, updateList, param);
+                			if (result == -1) {
+                				// 異常発生、処理中止
+                				break;
+                			}
+        				}
         			}
         		}
         	} catch (ConnectionException e) {
@@ -507,6 +590,19 @@ public class SfdcMailService implements ICmdService {
     	return result;
 		
 	}
+	
+	private SfdcParam[] getUpdateList(SfdcParam[] list, int limitSize, int times) {
+		SfdcParam[] paramList = null;
+		if (list != null && list.length > limitSize * times) {
+			paramList = new SfdcParam[limitSize];
+			for(int i = 0; i < limitSize; i++) {
+				paramList[i] = list[times * limitSize + i];
+			}
+		}
+		
+		return paramList;
+	}
+	
 	
 	/**
 	 * 処理結果をCSVに出力する。

@@ -74,7 +74,7 @@ global class SfdcMailWebService {
         if(paramList != null && paramList.size() > 0) {
             Integer limitSize = paramList[0].limitSize;
             Id minManageId = null;
-            if (successList != null && successList.size() > 0) {
+            if (successList != null && successList.size() > 0 && successList.get(0) != null) {
                 minManageId = successList.get(0).id;
                 for(SfdcParam sp: successList) {
                     if (minManageId > sp.id) {
@@ -82,7 +82,7 @@ global class SfdcMailWebService {
                     }
                 }
             }
-            if (failureList != null && failureList.size() > 0) {
+            if (failureList != null && failureList.size() > 0 && failureList.get(0) != null) {
                 minManageId = minManageId == null ? failureList.get(0).id : minManageId;
                 for(SfdcParam sp: failureList) {
                     if (minManageId > sp.id) {
@@ -181,9 +181,9 @@ global class SfdcMailWebService {
                     manage.PROCESSED_DATE__c = DateTime.now();
                 } else {
                     // 失敗
-                    info('送信成功管理情報更新情報設定：[ Id: ' + manage.Id + ', result: 1 ]');
                     param = getManageParam(manage, failureList);
                     if(param != null) {
+                        info('送信失敗管理情報更新情報設定：[ Id: ' + manage.Id + ', result: 9 ]');
                         manage.SEND_RESULT__c = '9';
                         manage.RETRY_CNT__c = param.retryCount;
                         manage.PROCESSED_DATE__c = DateTime.now();
@@ -235,7 +235,7 @@ global class SfdcMailWebService {
         SfdcParam param = null;
         if(manage != null && paramList != null && paramList.size() > 0) {
             for(SfdcParam sp : paramList) {
-                if(sp.Id == manage.Id) {
+                if(sp != null && sp.Id == manage.Id) {
                     // 存在
                     param = sp;
                     break;
@@ -288,6 +288,9 @@ global class SfdcMailWebService {
                     // メール送信を行う
                     receiverResult = sendMail(receiver);
                     if(receiverResult != null) {
+                        if(receiverResult.code != 0) {
+                            result = receiverResult.code;
+                        }
                         receiverMap.put(receiver.Id, receiverResult);
                         manageResult = manageMap.get(receiver.MAIL_SEQ_NUM__c);
                         if(manageResult != null) {
@@ -349,8 +352,8 @@ global class SfdcMailWebService {
     private static SfdcResult sendMail(MailReceiver__c receiver) {
         SfdcResult result = null;
         Messaging.SingleEmailMessage message = new Messaging.SingleEmailMessage();
-        if(receiver.SEND_ADR__c != null 
-           && (receiver.SEND_KBN__c == '1' || receiver.SEND_KBN__c == '2' || receiver.SEND_KBN__c == '3')) {
+        
+        if(checkSend(receiver)) {
             if(receiver.SEND_KBN__c == '1') {
                 // TO
                 message.setToAddresses(new String[] { receiver.SEND_ADR__c });
@@ -361,7 +364,6 @@ global class SfdcMailWebService {
                 // BCC
                 message.setBccAddresses(new String[] { receiver.SEND_ADR__c });
             }
-            
             // 送信名
             if(receiver.MAIL_SEQ_NUM__r.FROM_NAME__c != null) {
                 message.setSenderDisplayName(receiver.MAIL_SEQ_NUM__r.FROM_NAME__c);
@@ -371,16 +373,10 @@ global class SfdcMailWebService {
                 message.setReplyTo(receiver.MAIL_SEQ_NUM__r.REPLY_TO_ADDRESS__c);
             }
             // 件名
-            if(receiver.MAIL_SEQ_NUM__r.MAIL_SUBJECT__c != null) {
-                message.subject = receiver.MAIL_SEQ_NUM__r.MAIL_SUBJECT__c;
-            }
+            message.subject = receiver.MAIL_SEQ_NUM__r.MAIL_SUBJECT__c;
             // 本文
-            if(receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c != null) {
-                message.plainTextBody = receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c;
-            } else {
-                message.plainTextBody = '';
-            }
-
+            message.plainTextBody = receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c;
+            
             // メール送信
             try {
                 Messaging.SingleEmailMessage[] messages = new List<Messaging.SingleEmailMessage>{message};
@@ -400,9 +396,41 @@ global class SfdcMailWebService {
                 result.code = 9;
                 info('異常が発生しましたので、メール送信失敗しました。[ Id: ' + receiver.Id + ' ]');
             }
+        } else {
+            result = new SfdcResult();
+            result.code = 9;
         }
 
         return result;
+    }
+    
+    private static boolean checkSend(MailReceiver__c receiver) {
+        boolean isValid = true;
+        
+        if(receiver.SEND_ADR__c == null) {
+            isValid = false;
+            error('送信元アドレスが指定されないので、送信処理をスキップしました。');
+        }
+        
+        if(isValid && receiver.SEND_KBN__c != '1' && receiver.SEND_KBN__c != '2' && receiver.SEND_KBN__c != '3') {
+            isValid = false;
+            error('送信区分が正しくないため、送信処理をスキップしました。');
+        }
+        
+        // 件名
+        if(isValid && receiver.MAIL_SEQ_NUM__r.MAIL_SUBJECT__c == null || receiver.MAIL_SEQ_NUM__r.MAIL_SUBJECT__c == '') {
+            // 件名なし、送信不可にする
+            isValid = false;
+            error('件名が指定されないので、送信処理をスキップしました。');
+        }
+        // 本文
+        if(isValid && receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c == null || receiver.MAIL_SEQ_NUM__r.MAIL_BODY__c == '') {
+            // 本文なし、送信不可にする
+            isValid = false;
+            error('本文が指定されないので、送信処理をスキップしました。');                                                                                         
+        }
+        
+        return isValid;
     }
 
     /**
