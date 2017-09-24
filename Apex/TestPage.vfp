@@ -1,0 +1,22 @@
+<apex:page standardController="MailReceiver__c" recordSetVar="receiver" showHeader="false" title="テスト">
+    <apex:form >
+        <apex:pageBlock title="プロジェクト一覧">
+            <a href="{!URLFOR($Action.MailReceiver__c.New)}">新規</a>
+            <apex:pageBlockTable value="{!receiver}" var="item">
+                <apex:column value="{!item.MAIL_SEQ_NUM__c}"/>
+                <apex:column value="{!item.SEND_SEQ__c}"/>
+                <apex:column value="{!item.Name}"/>
+                <apex:column value="{!item.SEND_ADR__c}"/>
+                <apex:column value="{!item.SEND_KBN__c}"/>
+                <apex:column value="{!item.SEND_RESULT__c}"/>
+                <apex:column ><apex:commandLink value="変更"  action="{!URLFOR($Action.MAILRECEIVER__c.Edit, item.id)}"/></apex:column>
+                <apex:column ><apex:commandLink value="詳細" action="{!URLFOR($Action.MAILRECEIVER__c.View, item.id)}"/></apex:column>
+                <apex:column ><apex:commandLink value="削除" action="{!URLFOR($Action.MAILRECEIVER__c.Delete, item.id)}"/></apex:column>
+            </apex:pageBlockTable>
+            <apex:panelGrid columns="2">
+              <apex:commandLink action="{!previous}">Previous</apex:commandlink>
+              <apex:commandLink action="{!next}">Next</apex:commandlink>
+            </apex:panelGrid>
+        </apex:pageBlock>
+    </apex:form>
+</apex:page>
