@@ -125,8 +125,12 @@ public class CommonUtils {
      * @return
      */
     public static String getSysTime(){
-		Date today = new Date();
-		SimpleDateFormat df = new SimpleDateFormat("yyyyMMddHHmmss");
+		return getSysTime("yyyyMMddHHmmss");
+    }
+    
+    public static String getSysTime(String format) {
+    	Date today = new Date();
+		SimpleDateFormat df = new SimpleDateFormat(format);
 		String ret = df.format(today);
 		return ret;
     }

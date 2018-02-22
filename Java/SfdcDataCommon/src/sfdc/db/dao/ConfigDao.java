@@ -50,6 +50,7 @@ public class ConfigDao {
 			data.setEndpointUrl(rs.getString(10));
 			data.setUserId(rs.getString(11));
 			data.setPassword(rs.getString(12));
+			data.setQuotationMark(rs.getString(13));
 			configList.add(data);
 			logger.debug(data.dumpInfo());
 		}
@@ -77,6 +78,7 @@ public class ConfigDao {
 	    	sqlCmd.append(", ENDPOINT_URL");
 	    	sqlCmd.append(", USER_ID");
 	    	sqlCmd.append(", PASSWORD");
+	    	sqlCmd.append(", QUOTATION_MARK");
 	    	sqlCmd.append(" FROM ZUC_M_IF MIF");
 	    	sqlCmd.append(" INNER JOIN ZUC_M_SFDC_CONNECT CON");
 	    	sqlCmd.append(" ON MIF.CONNECT_ID = CON.ID");

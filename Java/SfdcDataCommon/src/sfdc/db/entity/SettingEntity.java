@@ -35,6 +35,8 @@ public class SettingEntity {
 	private String fileEncoding;
 	/** 入出力ファイル区切り文字 */ 
 	private String fileSplitter;
+	/** 引用符要否 **/
+	private String quotationMark;
 	/** 連携方式 */ 
 	private String linkMethod;
 	/** 連携オブジェクト名 */ 
@@ -142,6 +144,14 @@ public class SettingEntity {
 
 	public void setFileSplitter(String fileSplitter) {
 		this.fileSplitter = fileSplitter;
+	}
+
+	public String getQuotationMark() {
+		return quotationMark;
+	}
+
+	public void setQuotationMark(String quotationMark) {
+		this.quotationMark = quotationMark;
 	}
 
 	public String getLinkMethod() {

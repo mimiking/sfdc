@@ -120,6 +120,7 @@ public class SfdcBulkRegistService extends BaseRegistService {
 			String seperator = setting.getFileSplitter();
 			
 			File csvFile = new File(dataFileName);
+			String workFolder = dataFileName.replace(csvFile.getName(), "");
 			InputStreamReader osr  = new InputStreamReader(new FileInputStream(csvFile), encoding);
 		    BufferedReader reader = new BufferedReader(osr); 
 		    if (SettingEntity.FILE_HEADER_YES.equals(setting.getFileHeader())) {
@@ -128,7 +129,8 @@ public class SfdcBulkRegistService extends BaseRegistService {
 		 
 		    int lines = 0, totals = 0;
 		    String line;
-		    String importFile = "./convert.csv";
+		    String timestamp = CommonUtils.getSysTime("yyyyMMddHHmmssSSS");
+		    String importFile = String.format("%s%s_convert.csv",  workFolder, timestamp);
 		    CSVFileWriter csvWriter = new CSVFileWriter(new File(importFile), "UTF-8", ",");
 		    List<String> columnList = new MappingDao().getColumns(mappingList.get(0).getIfId());
 		    List<String> headers = new ArrayList<String>();
@@ -166,7 +168,7 @@ public class SfdcBulkRegistService extends BaseRegistService {
 		    	// Salesforceへ登録
 		    	if (totals > 0) {
 		    		// データインポートする
-		    		retCode = this.csvImport(importFile);
+		    		retCode = this.csvImport(importFile, workFolder, timestamp);
 		    	} else {
 		    		// 処理対象データがありません。
 		    		logger.error("処理対象データがありません。");
@@ -212,25 +214,25 @@ public class SfdcBulkRegistService extends BaseRegistService {
 	 * @return 処理結果
 	 * @throws IOException
 	 */
-	private int csvImport(String fileName) throws IOException {
+	private int csvImport(String fileName, String workFolder, String timestamp) throws IOException {
 		int status = Constant.RETURN_NG;
 		try {
 			switch (setting.getLinkMethod().toLowerCase()) {
 				case SettingEntity.LINK_METHOD_BULK_CREATE:
 					// 登録
-					status = this.create(fileName);
+					status = this.create(fileName, workFolder, timestamp);
 					break;
 				case SettingEntity.LINK_METHOD_BULK_UPDATE:
 					// 更新
-					status = this.update(fileName);
+					status = this.update(fileName, workFolder, timestamp);
 					break;
 				case SettingEntity.LINK_METHOD_BULK_UPSERT:
 					// 登録・更新
-					status = this.upsert(fileName);
+					status = this.upsert(fileName, workFolder, timestamp);
 					break;
 				case SettingEntity.LINK_METHOD_BULK_DELETE:
 					// 削除
-					status = this.delete(fileName);
+					status = this.delete(fileName, workFolder, timestamp);
 					break;
 			}
 		} catch (AsyncApiException e) {
@@ -247,9 +249,9 @@ public class SfdcBulkRegistService extends BaseRegistService {
 	 * @throws AsyncApiException
 	 * @throws IOException
 	 */
-	private int create(String fileName) throws AsyncApiException, IOException {
+	private int create(String fileName, String workFolder, String timestamp) throws AsyncApiException, IOException {
 		JobInfo jobInfo = this.createJob(this.setting.getLinkObj(), OperationEnum.insert);
-		return this.jobExecute(jobInfo, fileName);
+		return this.jobExecute(jobInfo, fileName, workFolder, timestamp);
 	}
 	
 	/**
@@ -259,9 +261,9 @@ public class SfdcBulkRegistService extends BaseRegistService {
 	 * @throws AsyncApiException
 	 * @throws IOException
 	 */
-	private int update(String fileName) throws AsyncApiException, IOException {
+	private int update(String fileName, String workFolder, String timestamp) throws AsyncApiException, IOException {
 		JobInfo jobInfo = this.createJob(this.setting.getLinkObj(), OperationEnum.update);
-		return this.jobExecute(jobInfo, fileName);
+		return this.jobExecute(jobInfo, fileName, workFolder, timestamp);
 	}
 	
 	/**
@@ -271,9 +273,9 @@ public class SfdcBulkRegistService extends BaseRegistService {
 	 * @throws AsyncApiException
 	 * @throws IOException
 	 */
-	private int upsert(String fileName) throws AsyncApiException, IOException {
+	private int upsert(String fileName, String workFolder, String timestamp) throws AsyncApiException, IOException {
 		JobInfo jobInfo = this.createJob(this.setting.getLinkObj(), OperationEnum.upsert);
-		return this.jobExecute(jobInfo, fileName);
+		return this.jobExecute(jobInfo, fileName, workFolder, timestamp);
 	}
 	
 	/**
@@ -283,9 +285,9 @@ public class SfdcBulkRegistService extends BaseRegistService {
 	 * @throws AsyncApiException
 	 * @throws IOException
 	 */
-	private int delete(String fileName) throws AsyncApiException, IOException {
+	private int delete(String fileName, String workFolder, String timestamp) throws AsyncApiException, IOException {
 		JobInfo jobInfo = this.createJob(this.setting.getLinkObj(), OperationEnum.delete);
-		return this.jobExecute(jobInfo, fileName);
+		return this.jobExecute(jobInfo, fileName, workFolder, timestamp);
 	}
 	
 	/**
@@ -296,8 +298,8 @@ public class SfdcBulkRegistService extends BaseRegistService {
 	 * @throws IOException
 	 * @throws AsyncApiException
 	 */
-	private int jobExecute(JobInfo jobInfo, String fileName) throws IOException, AsyncApiException {
-		List<BatchInfo> batchList = this.createBatches(jobInfo, fileName);
+	private int jobExecute(JobInfo jobInfo, String fileName, String workFolder, String timestamp) throws IOException, AsyncApiException {
+		List<BatchInfo> batchList = this.createBatches(jobInfo, fileName, workFolder, timestamp);
 		closeJob(jobInfo.getId());
 	    awaitCompletion(jobInfo, batchList);
 	    return checkResults(jobInfo, batchList);
@@ -335,13 +337,14 @@ public class SfdcBulkRegistService extends BaseRegistService {
 	 * @throws IOException
 	 * @throws AsyncApiException
 	 */
-	private List<BatchInfo> createBatches(JobInfo jobInfo, String csvFileName) throws IOException, AsyncApiException {
+	private List<BatchInfo> createBatches(JobInfo jobInfo, String csvFileName, String workFolder, String timeStamp) throws IOException, AsyncApiException {
 		List<BatchInfo> batchInfos = new ArrayList<BatchInfo>();
 		BufferedReader bufferReader = new BufferedReader(new InputStreamReader(new FileInputStream(csvFileName)));
 	    // ヘッダ
 	    byte[] headerBytes = (bufferReader.readLine() + "\n").getBytes("UTF-8");
 	    int headerBytesLength = headerBytes.length;
-	    File tmpFile = File.createTempFile("bulk", ".csv");
+//	    File tmpFile = File.createTempFile("bulk", ".csv");
+	    File tmpFile = File.createTempFile(String.format("%s%s_bulk", workFolder, timeStamp), ".csv");
 	    try {
 	        FileOutputStream tmpOut = new FileOutputStream(tmpFile);
 	        int maxBytesPerBatch = this.config.getMaxBytesPerBatch();
@@ -377,7 +380,6 @@ public class SfdcBulkRegistService extends BaseRegistService {
 	        } catch (IOException e) {
 	        	logger.error("ファイル処理異常が発生しました。", e);
 	        }
-	        
 	    }
 	    return batchInfos;
 	}
