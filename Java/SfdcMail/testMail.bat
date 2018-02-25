@@ -1,1 +1,0 @@
-java -cp ./bin;./lib/* salesforce.mail.test.SendMail
