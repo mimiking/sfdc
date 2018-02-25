@@ -1,12 +1,11 @@
 package sfdc.client.cmn;
 
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
@@ -99,39 +98,35 @@ public abstract class BaseRegistService extends CommonService {
 	 * @return 値
 	 * @throws Exception 異常
 	 */
-	protected String getImportValue(List<MappingEntity> mappingList, Map<String, List<ConvertEntity>> convertInfo, String[] data, String column) throws Exception {
-		int index;
+	protected String getImportValue(List<MappingEntity> mappingList, Map<String, List<ConvertEntity>> convertInfo, ResultSet data, String column) throws Exception {
+//		int index;
 		List<ConvertEntity> convertList = null;
 		StringBuilder value = new StringBuilder();
 		List<MappingEntity> list = this.getColMappings(mappingList, column);
 		for(MappingEntity entity : list) {
-			index = entity.getNo() - 1;
-			if (index < data.length) {
-//				convertList = this.getConvertList(entity.getIfId(), entity.getNo());
-				convertList = convertInfo.get(getConvertMapKey(entity.getIfId(), entity.getNo()));
-				if (!StringUtils.isEmpty(entity.getFixedVal()) || !StringUtils.isEmpty(entity.getDtFormat())) {
-					// 固定値 または　日時フォーマットの場合
-					if (entity.getMultiSelect() == 0 && entity.getMidStart() == 0 && entity.getMidCount() == 0 && convertList.size() == 0) {
-						if (!StringUtils.isEmpty(entity.getFixedVal()) && StringUtils.isEmpty(entity.getDtFormat())) {
-							// 固定値
-							value.append(entity.getFixedVal());
-						} else if (StringUtils.isEmpty(entity.getFixedVal()) && !StringUtils.isEmpty(entity.getDtFormat())) {
-							// 日時フォーマット
-							value.append(getDateStr(data[index], entity.getDtFormat()));
-						} else {
-							// エラー
-							logger.error("固定値と日時フォーマットが同時に設定できません。");
-							break;
-						}
+			convertList = convertInfo.get(getConvertMapKey(entity.getIfId(), entity.getNo()));
+			if (!StringUtils.isEmpty(entity.getFixedVal()) || !StringUtils.isEmpty(entity.getDtFormat())) {
+				// 固定値 または　日時フォーマットの場合
+				if (entity.getMultiSelect() == 0 && entity.getMidStart() == 0 && entity.getMidCount() == 0 && convertList.size() == 0) {
+					if (!StringUtils.isEmpty(entity.getFixedVal()) && StringUtils.isEmpty(entity.getDtFormat())) {
+						// 固定値
+						value.append(entity.getFixedVal());
+					} else if (StringUtils.isEmpty(entity.getFixedVal()) && !StringUtils.isEmpty(entity.getDtFormat())) {
+						// 日時フォーマット
+						value.append(getDateStr(data.getString(entity.getiColP()), entity.getDtFormat()));
 					} else {
-						// 固定値または日時フォーマットが設定された場合、ほかのものが設定できません。
-						logger.error("設定不正です。固定値または日時フォーマットが設定されているが、複数選択、切り出し、データ変更の情報も設定しています。");
+						// エラー
+						logger.error("固定値と日時フォーマットが同時に設定できません。");
 						break;
 					}
 				} else {
-					// 複数選択、切り出し、データ変換処理
-					value.append(convert(convertList, this.split(data[index], entity.getMidStart(), entity.getMidCount())));
+					// 固定値または日時フォーマットが設定された場合、ほかのものが設定できません。
+					logger.error("設定不正です。固定値または日時フォーマットが設定されているが、複数選択、切り出し、データ変更の情報も設定しています。");
+					break;
 				}
+			} else {
+				// 複数選択、切り出し、データ変換処理
+				value.append(convert(convertList, this.split(data.getString(entity.getiColP()), entity.getMidStart(), entity.getMidCount())));
 			}
 		}
 		
@@ -146,15 +141,21 @@ public abstract class BaseRegistService extends CommonService {
 	 * @return コラム名
 	 */
 	protected String getColumn(String column) {
-		if (column.endsWith("_r")) {
-			String[] cols = column.split("\\.");
-			if (cols.length > 1) {
-				return cols[1].replace("__r", "__c");
-			} else {
-				return cols[0].replace("__r", "__c");
-			}
+//		if (column.endsWith("_r")) {
+//			String[] cols = column.split("\\.");
+//			if (cols.length > 1) {
+//				return cols[1].replace("__r", "__c");
+//			} else {
+//				return cols[0].replace("__r", "__c");
+//			}
+//		} else {
+//			return column;
+//		}
+		String[] cols = column.split("\\.");
+		if (cols.length > 1) {
+			return cols[1].replace("__r", "__c");
 		} else {
-			return column;
+			return cols[0].replace("__r", "__c");
 		}
 	}
 	
@@ -197,75 +198,6 @@ public abstract class BaseRegistService extends CommonService {
 		logger.info("データ変換情報取得完了しました。");
 		
 		return convertList;
-	}
-	
-	/**
-	 * データ切り出しを行う。
-	 * @param input 処理対象
-	 * @param start 開始INDEX
-	 * @param length 長さ
-	 * @return 切り出し結果
-	 */
-	private String split(String input, int start, int length) {
-		if (StringUtils.isEmpty(input)) {
-			return StringUtils.EMPTY;
-		} else if (start >= 0) {
-			if (start >= input.length()) {
-				return StringUtils.EMPTY;
-			} else if (length > 0) {
-				if (start + length > input.length()) {
-					return input.substring(start, input.length());
-				} else {
-					return input.substring(start, start + length);
-				}
-			} else {
-				return input.substring(start);
-			}
-			
-		} else if (length > 0) {
-			return input.substring(0, length);
-		} else {
-			return input;
-		}
-	}
-
-	/**
-	 * データ変換を行う。
-	 * @param convertList 変換設定情報
-	 * @param input 変換対象
-	 * @return 変換結果
-	 */
-	private String convert(List<ConvertEntity> convertList, String input) {
-		
-		logger.info(String.format("データ変換開始します。（変換前：%s）", input));
-		
-		if (convertList != null && convertList.size() > 0) {
-			for(ConvertEntity conv: convertList) {
-				if ("Perfect".equals(conv.getFixedVal())) {
-					// 完全一致
-					if (input.equals(conv.getBefore())) {
-						input = conv.getAfter();
-						break;
-					}
-				} else if ("Partial".equals(conv.getFixedVal())) {
-					// 部分一致
-					if (input.contains(conv.getBefore())) {
-						input = input.replaceAll(conv.getBefore(), conv.getAfter());
-						break;
-					}
-				} else if ("Regex".equals(conv.getFixedVal())) {
-					Pattern p = Pattern.compile("(" + conv.getBefore() + ")");
-					Matcher m = p.matcher(input);
-					if (m.find()){
-						input = input.replaceAll(m.group(1), conv.getAfter());
-					}
-				}
-			}
-		}
-		
-		logger.info(String.format("データ変換終了しました。（変換後：%s）", input));
-		
-		return input;
 	}
 	
 	/**

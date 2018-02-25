@@ -391,19 +391,20 @@ public class TeleCallExpService extends CommonService {
 		} else if (!StringUtils.isEmpty(mappingEntity.getDtFormat())) { // 日時フォーマット
 			return CommonUtils.dateFormat(colData, mappingEntity.getDtFormat());
 		} else { // データ変換あり
-			if (mappingEntity.getMidStart() != 0 || mappingEntity.getMidCount() != 0) { // 切出し
-				if (mappingEntity.getMidCount() == 0) {
-					colData = StringUtils.substring(colData, mappingEntity.getMidStart() - 1);
-				} else if (mappingEntity.getMidStart() == 0) {
-					colData = StringUtils.substring(colData, 0, mappingEntity.getMidCount());
-				} else {
-					int beginIndex = mappingEntity.getMidStart() - 1;
-					int endIndex = beginIndex + mappingEntity.getMidCount();
-					colData = StringUtils.substring(colData, beginIndex, endIndex);
-				}
-			} else { // 編集しない
-				colData = StringUtils.trimToEmpty(colData);
-			}
+//			if (mappingEntity.getMidStart() != 0 || mappingEntity.getMidCount() != 0) { // 切出し
+//				if (mappingEntity.getMidCount() == 0) {
+//					colData = StringUtils.substring(colData, mappingEntity.getMidStart() - 1);
+//				} else if (mappingEntity.getMidStart() == 0) {
+//					colData = StringUtils.substring(colData, 0, mappingEntity.getMidCount());
+//				} else {
+//					int beginIndex = mappingEntity.getMidStart() - 1;
+//					int endIndex = beginIndex + mappingEntity.getMidCount();
+//					colData = StringUtils.substring(colData, beginIndex, endIndex);
+//				}
+//			} else { // 編集しない
+//				colData = StringUtils.trimToEmpty(colData);
+//			}
+			colData = split(colData, mappingEntity.getMidStart(), mappingEntity.getMidCount());
 			// データ変換
 			String key = String.valueOf(mappingEntity.getNo());
 			List<ConvertEntity> convertEntityList = null;
@@ -462,26 +463,26 @@ public class TeleCallExpService extends CommonService {
 			return colData;
 		}
 		logger.info(String.format(TeleCallExpConstant.MESSAGE_I002, TeleCallExpConstant.MESSAGE_R015));
-		// データ変換
-		for (int index = 0, length = convertEntityList.size(); index < length; index++) {
-			ConvertEntity convertEntity = convertEntityList.get(index);
-			// 変換条件判定
-			String convCondition = convertEntity.getFixedVal();
-			if (StringUtils.equals(convCondition, TeleCallExpConstant.STRING_PERFECT)) {// 完全一致
-				if (StringUtils.equals(colData, convertEntity.getBefore())) {
-					colData = convertEntity.getAfter();
-					break;
-				}
-			} else if (StringUtils.equals(convCondition, TeleCallExpConstant.STRING_PARTIAL)) { // 部分一致
-				colData = StringUtils.replace(colData, convertEntity.getBefore(), convertEntity.getAfter());
-			} else if (StringUtils.equals(convCondition, TeleCallExpConstant.STRING_REGEX)) { // 正規表現
-				colData = colData.replaceAll(convertEntity.getBefore(), convertEntity.getAfter());
-			} else {
-				logger.info(String.format(TeleCallExpConstant.MESSAGE_E005, TeleCallExpConstant.MESSAGE_R016));
-				break;
-			}
-		}
-		return colData;
+//		// データ変換
+//		for (int index = 0, length = convertEntityList.size(); index < length; index++) {
+//			ConvertEntity convertEntity = convertEntityList.get(index);
+//			// 変換条件判定
+//			String convCondition = convertEntity.getFixedVal();
+//			if (StringUtils.equals(convCondition, TeleCallExpConstant.STRING_PERFECT)) {// 完全一致
+//				if (StringUtils.equals(colData, convertEntity.getBefore())) {
+//					colData = convertEntity.getAfter();
+//					break;
+//				}
+//			} else if (StringUtils.equals(convCondition, TeleCallExpConstant.STRING_PARTIAL)) { // 部分一致
+//				colData = StringUtils.replace(colData, convertEntity.getBefore(), convertEntity.getAfter());
+//			} else if (StringUtils.equals(convCondition, TeleCallExpConstant.STRING_REGEX)) { // 正規表現
+//				colData = colData.replaceAll(convertEntity.getBefore(), convertEntity.getAfter());
+//			} else {
+//				logger.info(String.format(TeleCallExpConstant.MESSAGE_E005, TeleCallExpConstant.MESSAGE_R016));
+//				break;
+//			}
+//		}
+		return convert(convertEntityList, colData);
 	}
 	
 	/**
@@ -501,9 +502,16 @@ public class TeleCallExpService extends CommonService {
 				configEntity.getFileSplitter());
 		try {
 			csvFileWriter.open();
-			for (int index = 0, length = csvFileData.size(); index < length; index++) {
-				csvFileWriter.writeLine(csvFileData.get(index));
+			if (QUOTE_YES.equals(setting.getQuotationMark())) {
+				for (int index = 0, length = csvFileData.size(); index < length; index++) {
+					csvFileWriter.writeLine(csvFileData.get(index));
+				}
+			} else {
+				for (int index = 0, length = csvFileData.size(); index < length; index++) {
+					csvFileWriter.writeLineWithoutEscape(csvFileData.get(index));
+				}
 			}
+			
 			csvFileWriter.close();
 		} catch (IOException e) {
 			logger.error(String.format(TeleCallExpConstant.MESSAGE_E001, TeleCallExpConstant.MESSAGE_R017), e);

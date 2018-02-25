@@ -1,1 +1,9 @@
 *.class
+Java/SfdcBulkDataImport/config/config.ini
+Java/SfdcDataImport/config/config.ini
+Java/SfdcDataImport/log/Trace.log
+Java/SfdcMail/config/setting.config
+Java/SfdcMail/log/mail.log
+Java/SfdcMail/testMail.bat
+Java/SfdcDataImport/bin/.gitignore
+Java/SfdcDataExport/bin/.gitignore

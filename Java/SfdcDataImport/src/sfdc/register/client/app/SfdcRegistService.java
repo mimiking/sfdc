@@ -1,10 +1,8 @@
 package sfdc.register.client.app;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.sql.ResultSet;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -13,6 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Properties;
 import java.util.TimeZone;
 
 import org.apache.commons.lang.StringUtils;
@@ -25,6 +24,7 @@ import com.sforce.soap.partner.sobject.SObject;
 import com.sforce.ws.ConnectionException;
 
 import sfdc.client.cmn.BaseRegistService;
+import sfdc.client.cmn.CSVAccess;
 import sfdc.client.util.CommonUtils;
 import sfdc.db.dao.MappingDao;
 import sfdc.db.entity.ConvertEntity;
@@ -57,31 +57,22 @@ public class SfdcRegistService extends BaseRegistService {
 	protected int regist(SettingEntity setting, List<MappingEntity> mappingList, String dataFileName) throws Exception {
 		int retCode = RegistConstant.RETURN_OK;
 		// CSVファイル読込
+		CSVAccess access = null;
+		ResultSet resultSet = null;
 		try {
-			String encoding = setting.getFileEncoding();
-			encoding = StringUtils.isEmpty(encoding) ? "SJIS" : encoding;
-			String seperator = setting.getFileSplitter();
-			
+			int count = 0;
 			File csvFile = new File(dataFileName);
-			InputStreamReader osr  = new InputStreamReader(new FileInputStream(csvFile), encoding);
-		    BufferedReader reader = new BufferedReader(osr); 
-		 
-		    int count = 0;
-		    String line;
+			String sql = getCsvSql(csvFile.getName().replaceAll("\\..*", ""));
+			Properties properties = getCsvProperties();
+			access = new CSVAccess(dataFileName.replace(csvFile.getName(), ""), properties);
+			resultSet = access.select(sql);
 		    List<SObject> sObjectList = new ArrayList<SObject>();
 		    List<String> columnList = new MappingDao().getColumns(mappingList.get(0).getIfId());
 		    
-	      
-		    if (SettingEntity.FILE_HEADER_YES.equals(setting.getFileHeader())) {
-		    	reader.readLine();
-		    }
-		    
 		    // 1行ずつCSVファイルを読み込む
 		    Map<String, List<ConvertEntity>> convertInfo =  getConvertInfo(mappingList);
-		    while ((line = reader.readLine()) != null) {
-		    	String[] data = line.split(seperator, 0);
-		    	Map<String, String> valueMap = this.dataMapping(columnList, mappingList, convertInfo, data);
-
+		    while (resultSet.next()) {
+				Map<String, String> valueMap = this.dataMapping(columnList, mappingList, convertInfo, resultSet);
 		    	count++;
 		    	if (valueMap != null && valueMap.size() > 0) {
 		    		SObject sObject = this.getSObject(setting.getLinkObj(), mappingList, valueMap);
@@ -91,11 +82,8 @@ public class SfdcRegistService extends BaseRegistService {
 		    		retCode = RegistConstant.RETURN_NG;
 		    		logger.error(String.format(RegistConstant.MESSAGE_E013, count));
 		    	}
-		    }
-	
-		    reader.close();
-		    osr.close();
-		    
+			}
+
 		    logger.info(String.format(RegistConstant.MESSAGE_I010, count));
 		    
 		    if (retCode == RegistConstant.RETURN_OK) {
@@ -104,7 +92,20 @@ public class SfdcRegistService extends BaseRegistService {
 		    }
 
 	    } catch (IOException e) {
-	      System.out.println(e);
+	    	retCode = RegistConstant.RETURN_NG;
+	    	logger.error("IO異常が発生しました", e);
+	    } finally {
+	    	try {
+	    		if (resultSet != null) {
+		    		resultSet.close();
+		    	}
+	    		
+	    		if (access != null) {
+	    			access.close();
+	    		}
+	    	} catch(Exception e) {
+	    		logger.error("CSVファイル操作異常が発生しました", e);
+	    	}
 	    }
 		
 		return retCode;
@@ -118,7 +119,7 @@ public class SfdcRegistService extends BaseRegistService {
 	 * @return 処理結果
 	 * @throws Exception 異常情報
 	 */
-	private Map<String, String> dataMapping(List<String> columnList, List<MappingEntity> mappingList, Map<String, List<ConvertEntity>> convertInfo, String[] data) throws Exception {
+	private Map<String, String> dataMapping(List<String> columnList, List<MappingEntity> mappingList, Map<String, List<ConvertEntity>> convertInfo, ResultSet data) throws Exception {
 		Map<String, String> valueMap = new HashMap<String, String>();
 		for(String column : columnList) {
 			valueMap.put(column, this.getImportValue(mappingList, convertInfo, data, column));
@@ -131,8 +132,6 @@ public class SfdcRegistService extends BaseRegistService {
 	protected String getDateStr(String input, String format) {
 		return CommonUtils.dateFormat(input, CommonUtils.getStandardFormat(format));
 	}
-	
-	
 
 	/**
 	 * SObjectを取得する。
@@ -162,8 +161,17 @@ public class SfdcRegistService extends BaseRegistService {
 				} else {
 					sObject.setField(column, null);
 				}
-//			} else if (column.contains(".")) {
-//				// 外部ID
+// 			} else if (column.contains(".")) {
+// 				// 外部ID
+// 				String[] externals = column.split("\\.");
+// 				SObject pSObject = new SObject();
+// 				pSObject.setType(externals[0]);
+// 				pSObject.setField(this.setting.getExternalIdCol().split("\\.")[1], valueMap.get(column));
+				
+// //				SObject cSObject = new SObject();
+// //				cSObject.
+// 				sObject.setField(externals[1], pSObject);
+				
 //				SObject exSObject = new SObject();
 ////				String colName = getColumn(column);
 //				String[] dat = column.split("\\.");

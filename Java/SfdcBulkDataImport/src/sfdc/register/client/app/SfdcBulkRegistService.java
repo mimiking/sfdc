@@ -6,11 +6,13 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 
 import org.apache.commons.io.FileUtils;
@@ -31,6 +33,7 @@ import com.sforce.ws.ConnectionException;
 import com.sforce.ws.ConnectorConfig;
 
 import sfdc.client.cmn.BaseRegistService;
+import sfdc.client.cmn.CSVAccess;
 import sfdc.client.cmn.SfdcConnectorConfig;
 import sfdc.client.util.CSVFileWriter;
 import sfdc.client.util.CommonUtils;
@@ -113,40 +116,36 @@ public class SfdcBulkRegistService extends BaseRegistService {
 	@Override
 	protected int regist(SettingEntity setting, List<MappingEntity> mappingList, String dataFileName) throws Exception {
 		int retCode = Constant.RETURN_OK;
+		CSVFileWriter csvWriter = null;
+		CSVAccess access = null;
+		ResultSet resultSet = null;
+		File csvFile = new File(dataFileName);
+		String workFolder = dataFileName.replace(csvFile.getName(), "");
+
+	    String timestamp = CommonUtils.getSysTime("yyyyMMddHHmmssSSS");
+	    String importFile = String.format("%s%s_convert.csv",  workFolder, timestamp);
 		// CSVファイル読込
 		try {
-			String encoding = setting.getFileEncoding();
-			encoding = StringUtils.isEmpty(encoding) ? "SJIS" : encoding;
-			String seperator = setting.getFileSplitter();
-			
-			File csvFile = new File(dataFileName);
-			String workFolder = dataFileName.replace(csvFile.getName(), "");
-			InputStreamReader osr  = new InputStreamReader(new FileInputStream(csvFile), encoding);
-		    BufferedReader reader = new BufferedReader(osr); 
-		    if (SettingEntity.FILE_HEADER_YES.equals(setting.getFileHeader())) {
-		    	reader.readLine();
-		    }
-		 
-		    int lines = 0, totals = 0;
-		    String line;
-		    String timestamp = CommonUtils.getSysTime("yyyyMMddHHmmssSSS");
-		    String importFile = String.format("%s%s_convert.csv",  workFolder, timestamp);
-		    CSVFileWriter csvWriter = new CSVFileWriter(new File(importFile), "UTF-8", ",");
+			int lines = 0, totals = 0;
+		    
 		    List<String> columnList = new MappingDao().getColumns(mappingList.get(0).getIfId());
 		    List<String> headers = new ArrayList<String>();
 		    for (String column : columnList) {
 		    	headers.add(this.getColumn(column));
 		    }
+
+		    csvWriter = new CSVFileWriter(new File(importFile), "UTF-8", ",");
 		    csvWriter.open();
 		    csvWriter.writeLine(headers);
+		    
+		    String sql = getCsvSql(csvFile.getName().replaceAll("\\..*", ""));
+			Properties properties = getCsvProperties();
+			access = new CSVAccess(dataFileName.replace(csvFile.getName(), ""), properties);
+			resultSet = access.select(sql);
 		  
-		    // 1行ずつCSVファイルを読み込む
 		    Map<String, List<ConvertEntity>> convertInfo =  getConvertInfo(mappingList);
-		    while ((line = reader.readLine()) != null) {
-		    	String[] data = line.split(seperator, 0);
-		    	
-		    	List<String> valueList = this.dataMapping(columnList, mappingList, convertInfo, data);
-
+		    while (resultSet.next()) {		    	
+		    	List<String> valueList = this.dataMapping(columnList, mappingList, convertInfo, resultSet);
 		    	lines++;
 		    	if (valueList != null && valueList.size() > 0) {
 		    		totals++;
@@ -159,9 +158,6 @@ public class SfdcBulkRegistService extends BaseRegistService {
 		    }
 
 		    csvWriter.close();
-		    reader.close();
-		    osr.close();
-		    
 		    logger.info(String.format(RegistConstant.MESSAGE_I010, lines));
 		    
 		    if (retCode == Constant.RETURN_OK) {
@@ -173,15 +169,33 @@ public class SfdcBulkRegistService extends BaseRegistService {
 		    		// 処理対象データがありません。
 		    		logger.error("処理対象データがありません。");
 		    	}
-		    	// 一時ファイルを削除する。
-	    		FileUtils.forceDelete(new File(importFile));
 		    }
 
-	    } catch (IOException e) {
+	    } catch (Exception e) {
+	    	if (csvWriter != null) {
+	    		try {
+	    			csvWriter.close();
+	    		} catch (Exception ex) {
+	    			logger.error("IO異常が発生しました。", e);
+	    		}
+	    	}
 	    	retCode = Constant.RETURN_NG;
 	    	logger.error("ファイル処理異常が発生しました。", e);
-	    } 
-		
+	    } finally {
+ 	    	try {
+ 	    		if (resultSet != null) {
+ 		    		resultSet.close();
+ 		    	}
+ 	    		
+ 	    		if (access != null) {
+ 	    			access.close();
+ 	    		}
+ 	    	} catch(Exception e) {
+ 	    		logger.error("CSVファイル操作異常が発生しました", e);
+ 	    	}
+ 	    	// 一時ファイルを削除する。
+    		FileUtils.forceDelete(new File(importFile));
+ 	    }
 		return retCode;
 	}
 	
@@ -193,7 +207,7 @@ public class SfdcBulkRegistService extends BaseRegistService {
 	 * @return 処理結果
 	 * @throws Exception 異常情報
 	 */
-	private List<String> dataMapping(List<String> columnList, List<MappingEntity> mappingList, Map<String, List<ConvertEntity>> convertInfo, String[] data) throws Exception {
+	private List<String> dataMapping(List<String> columnList, List<MappingEntity> mappingList, Map<String, List<ConvertEntity>> convertInfo, ResultSet data) throws Exception {
 		List<String> valueList = new ArrayList<String>();
 		for(String column : columnList) {
 			valueList.add(this.getImportValue(mappingList, convertInfo, data, column));
@@ -343,10 +357,10 @@ public class SfdcBulkRegistService extends BaseRegistService {
 	    // ヘッダ
 	    byte[] headerBytes = (bufferReader.readLine() + "\n").getBytes("UTF-8");
 	    int headerBytesLength = headerBytes.length;
-//	    File tmpFile = File.createTempFile("bulk", ".csv");
-	    File tmpFile = File.createTempFile(String.format("%s%s_bulk", workFolder, timeStamp), ".csv");
+	    FileOutputStream tmpOut = null;
+	    File tmpFile = new File(String.format("%s%s_bulk.csv", workFolder, timeStamp));
 	    try {
-	        FileOutputStream tmpOut = new FileOutputStream(tmpFile);
+	        tmpOut = new FileOutputStream(tmpFile);
 	        int maxBytesPerBatch = this.config.getMaxBytesPerBatch();
 	        int maxRowsPerBatch = this.config.getMaxRowsPerBatch();
 	        int currentBytes = 0;
@@ -361,6 +375,8 @@ public class SfdcBulkRegistService extends BaseRegistService {
 	                currentLines = 0;
 	            }
 	            if (currentBytes == 0) {
+	            	tmpOut.flush();
+	            	tmpOut.close();
 	                tmpOut = new FileOutputStream(tmpFile);
 	                tmpOut.write(headerBytes);
 	                currentBytes = headerBytesLength;
@@ -373,10 +389,17 @@ public class SfdcBulkRegistService extends BaseRegistService {
 	        if (currentLines > 1) {
 	            createBatch(tmpOut, tmpFile, batchInfos, jobInfo);
 	        }
+	        
+	        tmpOut.flush();
+		    tmpOut.close();
+	        
 	    } finally {
-	        tmpFile.delete();
 	        try {
 	        	bufferReader.close();
+	        	boolean isDel = tmpFile.delete();
+	        	if (!isDel) {
+	        		logger.error(String.format("一時ファイル削除失敗しました。（%s）", tmpFile.getAbsolutePath()));
+	        	}
 	        } catch (IOException e) {
 	        	logger.error("ファイル処理異常が発生しました。", e);
 	        }

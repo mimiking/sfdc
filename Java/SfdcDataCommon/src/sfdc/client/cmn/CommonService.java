@@ -6,6 +6,9 @@ import java.net.ProxySelector;
 import java.net.URI;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
@@ -22,11 +25,21 @@ import com.sforce.ws.ConnectorConfig;
 import sfdc.client.util.Constant;
 import sfdc.client.util.ServiceConfig;
 import sfdc.db.dao.ConfigDao;
+import sfdc.db.dao.MappingDao;
+import sfdc.db.entity.ConvertEntity;
 import sfdc.db.entity.SettingEntity;
 
 public abstract class CommonService implements ICmdService {
 	/** ログ部品 */
 	private static Logger logger = Logger.getLogger(CommonService.class);
+	/** 変換方式：完全一致 */
+	public static final String PERFECT = "Perfect";
+	/** 変換方式：部分一致 */
+	public static final String PARTIAL = "Partial";
+	/** 変換方式：正規表現 */
+	public static final String REGEX = "Regex";
+	/** クォーテーション **/
+	public static final String QUOTE_YES = "1";
 	/** サービス接続Soapオブジェクト　*/
 	protected PartnerConnection connection;
 	/** サービス接続情報　*/
@@ -182,6 +195,121 @@ public abstract class CommonService implements ICmdService {
 	
 	protected boolean isActionValid(String linkMethod) {
 		return true;
+	}
+	
+	protected Properties getCsvProperties() {
+		Properties properties = new Properties();
+		String suppressHeaders = SettingEntity.FILE_HEADER_YES.equals(setting.getFileHeader()) ? "false" : "true";
+		String encoding = setting.getFileEncoding();
+		encoding = StringUtils.isEmpty(encoding) ? "SJIS" : encoding;
+		properties.setProperty("separator", setting.getFileSplitter());
+		properties.setProperty("charset", encoding);
+		properties.setProperty("suppressHeaders", suppressHeaders);
+		properties.setProperty("quotechar", QUOTE_YES.equals(setting.getQuotationMark()) ? "" : "\"" );
+		
+		return properties;
+	}
+	
+	protected String getCsvSql(String tableName) throws SQLException, Exception {
+		MappingDao dao = new MappingDao();
+		StringBuilder sql = new StringBuilder();
+		sql.append(" SELECT ");
+		if (SettingEntity.FILE_HEADER_YES.equals(setting.getFileHeader())) {
+			// ヘッダあり、マッピング情報からコラムを取得する。
+			List<String> columnList = dao.getInputColumns(setting.getIfId());
+			for(int i = 0; i < columnList.size(); i++) {
+				if (i == 0) {
+					sql.append(columnList.get(i));
+				} else {
+					sql.append(", ").append(columnList.get(i));
+				}
+			}
+		} else {
+			// ヘッダなし
+			List<String> indexList = dao.getInputIndexList(setting.getIfId());
+			for(int i = 0; i < indexList.size(); i++) {
+				if (i == 0) {
+					sql.append("COLUMN").append(indexList.get(i));
+				} else {
+					sql.append(", ").append("COLUMN").append(indexList.get(i));
+				}
+			}
+		}
+		
+		sql.append(" FROM ").append(tableName);
+		if (StringUtils.isNotEmpty(setting.getCondition())) {
+			sql.append(" WHERE ").append(setting.getCondition());
+		}
+		
+		logger.info(String.format("CSV SQL: %s", sql));
+		
+		return sql.toString();
+	}
+	
+	/**
+	 * データ切り出しを行う。
+	 * @param input 処理対象
+	 * @param start 開始INDEX
+	 * @param length 長さ
+	 * @return 切り出し結果
+	 */
+	protected String split(String input, int start, int length) {
+		if (StringUtils.isEmpty(input)) {
+			return StringUtils.EMPTY;
+		} else if (start >= 0) {
+			if (start >= input.length()) {
+				return StringUtils.EMPTY;
+			} else if (length > 0) {
+				if (start + length > input.length()) {
+					return input.substring(start, input.length());
+				} else {
+					return input.substring(start, start + length);
+				}
+			} else {
+				return input.substring(start);
+			}
+			
+		} else if (length > 0) {
+			return input.substring(0, length);
+		} else {
+			return input;
+		}
+	}
+	
+	/**
+	 * データ変換を行う。
+	 * @param convertList 変換設定情報
+	 * @param input 変換対象
+	 * @return 変換結果
+	 */
+	protected String convert(List<ConvertEntity> convertList, String input) {
+		if (convertList != null && convertList.size() > 0) {
+			logger.info(String.format("データ変換開始します。（変換前：%s）", input));
+			for(ConvertEntity conv: convertList) {
+				if (PERFECT.equalsIgnoreCase(conv.getFixedVal())) {
+					// 完全一致
+					if (input.equals(conv.getBefore())) {
+						input = conv.getAfter();
+						break;
+					}
+				} else if (PARTIAL.equalsIgnoreCase(conv.getFixedVal())) {
+					// 部分一致
+					if (input.contains(conv.getBefore())) {
+						input = input.replaceAll(conv.getBefore(), conv.getAfter());
+						break;
+					}
+				} else if (REGEX.equalsIgnoreCase(conv.getFixedVal())) {
+					Pattern p = Pattern.compile("(" + conv.getBefore() + ")");
+					Matcher m = p.matcher(input);
+					if (m.find()){
+						input = input.replaceAll(m.group(1), conv.getAfter());
+					}
+				}
+			}
+			logger.info(String.format("データ変換終了しました。（変換後：%s）", input));
+		}
+		
+		return input;
 	}
 
 }

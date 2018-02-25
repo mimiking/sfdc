@@ -16,5 +16,6 @@
 	<classpathentry kind="lib" path="lib/commons-logging-1.2.jar"/>
 	<classpathentry kind="lib" path="lib/jackson-core-asl-1.9.13.jar"/>
 	<classpathentry kind="lib" path="lib/jackson-mapper-asl-1.9.13.jar"/>
+	<classpathentry kind="lib" path="lib/csvjdbc-1.0-34.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

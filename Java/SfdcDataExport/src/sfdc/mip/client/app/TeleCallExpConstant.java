@@ -94,11 +94,11 @@ public class TeleCallExpConstant extends Constant {
 	// 定数文字列
 	/** 文字列：Query */
 	public static final String STRING_QUERY = "Query";
-	/** 文字列：Perfect */
-	public static final String STRING_PERFECT = "Perfect";
-	/** 文字列：Partial */
-	public static final String STRING_PARTIAL = "Partial";
-	/** 文字列：Regex */
-	public static final String STRING_REGEX = "Regex";
+//	/** 文字列：Perfect */
+//	public static final String STRING_PERFECT = "Perfect";
+//	/** 文字列：Partial */
+//	public static final String STRING_PARTIAL = "Partial";
+//	/** 文字列：Regex */
+//	public static final String STRING_REGEX = "Regex";
 	
 }

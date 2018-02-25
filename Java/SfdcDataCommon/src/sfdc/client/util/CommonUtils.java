@@ -29,6 +29,7 @@ public class CommonUtils {
 		if (StringUtils.isEmpty(date) || StringUtils.isEmpty(format)) {
 			return date;
 		} else {
+			date = date.replaceAll("\"", "");
 			try {
 				String year = "", month = "", day = "";
 				String hours = "08", minutes = "00", seconds = "00";

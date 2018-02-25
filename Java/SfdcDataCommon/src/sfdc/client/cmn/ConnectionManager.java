@@ -8,6 +8,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Properties;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
@@ -108,4 +109,16 @@ public class ConnectionManager {
 		return conn;
 	}
 
+	public static Connection getCsvConnection(String src, Properties properties) throws Exception {
+		Connection conn = null;
+		try {
+			Class.forName("org.relique.jdbc.csv.CsvDriver");
+			conn = DriverManager.getConnection(String.format("jdbc:relique:csv:%s", src), properties);
+		} catch (SQLException | ClassNotFoundException e) {
+			logger.error(String.format(Constant.MESSAGE_E001, Constant.MESSAGE_R009), e);
+			throw e;
+		}
+		
+		return conn;
+	}
 }

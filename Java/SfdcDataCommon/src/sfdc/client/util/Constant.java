@@ -37,5 +37,7 @@ public class Constant {
  	public static final String MESSAGE_R007 = "マッピング情報の取得";
  	/** メッセージ：データ変換の取得 **/
  	public static final String MESSAGE_R008 = "データ変換の取得";
+ 	/** メッセージ：CSVファイル接続 **/
+ 	public static final String MESSAGE_R009 = "CSVファイル接続";
 
 }

@@ -83,7 +83,41 @@ public class MappingDao {
 		}
 		
 		return columns;
-	} 
+	}
+	
+	public List<String> getInputColumns(String ifId) throws SQLException, Exception {
+		StringBuilder sql = new StringBuilder("SELECT DISTINCT I_COL_P FROM ZUC_M_MAPPINNG ");
+		sql.append(this.getWhereClause());
+		ResultSet rs = DBAccess.getInstance().select(sql.toString(), new Object[] { ifId });
+        // 入力データトレースログ出力
+		List<String> columns= new ArrayList<String>();
+		while (rs.next()) {
+			columns.add(rs.getString(1));
+		}
+		
+		if (columns.size() == 0) {
+			logger.info(String.format(Constant.MESSAGE_E004, ifId) );
+		}
+		
+		return columns;
+	}
+	
+	public List<String> getInputIndexList(String ifId) throws SQLException, Exception {
+		StringBuilder sql = new StringBuilder("SELECT NO FROM ZUC_M_MAPPINNG ");
+		sql.append(this.getWhereClause());
+		ResultSet rs = DBAccess.getInstance().select(sql.toString(), new Object[] { ifId });
+        // 入力データトレースログ出力
+		List<String> columns= new ArrayList<String>();
+		while (rs.next()) {
+			columns.add(rs.getString(1));
+		}
+		
+		if (columns.size() == 0) {
+			logger.info(String.format(Constant.MESSAGE_E004, ifId) );
+		}
+		
+		return columns;
+	}
 	
     /**
      * マッピング情報取得SQL文を取得する。
