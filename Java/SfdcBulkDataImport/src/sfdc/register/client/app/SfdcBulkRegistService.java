@@ -131,7 +131,17 @@ public class SfdcBulkRegistService extends BaseRegistService {
 		    List<String> columnList = new MappingDao().getColumns(mappingList.get(0).getIfId());
 		    List<String> headers = new ArrayList<String>();
 		    for (String column : columnList) {
-		    	headers.add(this.getColumn(column));
+		    	if (column.contains(":")) {
+		    		String[] cols = column.split(":");
+		    		if (cols.length == 3) {
+		    			headers.add(String.format("%s.%s", cols[0], cols[2]));
+		    		} else {
+		    			logger.error(String.format("関連項目の外部ID設定不正です。(%s)", column));
+		    			return  Constant.RETURN_NG;
+		    		}
+		    	} else {
+		    		headers.add(column);
+		    	}
 		    }
 
 		    csvWriter = new CSVFileWriter(new File(importFile), "UTF-8", ",");
@@ -194,7 +204,10 @@ public class SfdcBulkRegistService extends BaseRegistService {
  	    		logger.error("CSVファイル操作異常が発生しました", e);
  	    	}
  	    	// 一時ファイルを削除する。
-    		FileUtils.forceDelete(new File(importFile));
+ 	    	File file = new File(importFile);
+ 	    	if (file.exists()) {
+ 	    		FileUtils.forceDelete(file);
+ 	    	}
  	    }
 		return retCode;
 	}

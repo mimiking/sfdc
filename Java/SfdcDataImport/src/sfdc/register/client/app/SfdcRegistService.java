@@ -3,7 +3,6 @@ package sfdc.register.client.app;
 import java.io.File;
 import java.io.IOException;
 import java.sql.ResultSet;
-import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -139,9 +138,9 @@ public class SfdcRegistService extends BaseRegistService {
 	 * @param mappingList マッピング設定情報
 	 * @param valueMap 値情報
 	 * @return SObject
-	 * @throws ParseException
+	 * @throws Exception 
 	 */
-	private SObject getSObject(String objectName, List<MappingEntity> mappingList, Map<String, String> valueMap) throws ParseException {
+	private SObject getSObject(String objectName, List<MappingEntity> mappingList, Map<String, String> valueMap) throws Exception {
 		String column;
 		SObject sObject = new SObject();
 		sObject.setType(objectName);
@@ -161,30 +160,18 @@ public class SfdcRegistService extends BaseRegistService {
 				} else {
 					sObject.setField(column, null);
 				}
-// 			} else if (column.contains(".")) {
-// 				// 外部ID
-// 				String[] externals = column.split("\\.");
-// 				SObject pSObject = new SObject();
-// 				pSObject.setType(externals[0]);
-// 				pSObject.setField(this.setting.getExternalIdCol().split("\\.")[1], valueMap.get(column));
-				
-// //				SObject cSObject = new SObject();
-// //				cSObject.
-// 				sObject.setField(externals[1], pSObject);
-				
-//				SObject exSObject = new SObject();
-////				String colName = getColumn(column);
-//				String[] dat = column.split("\\.");
-//				String[] dr = this.setting.getExternalIdCol().split("\\.");
-//				exSObject.setType(dr[0]);
-//				if (StringUtils.isEmpty(valueMap.get(column))) {
-//					exSObject.setField(dr[1], null);
-//				} else {
-//					exSObject.setField(dr[1], valueMap.get(column));
-//				}
-//				sObject.setSObjectField(dat[1], exSObject);
+ 			} else if (column.contains(":")) {
+ 				// 外部ID
+ 				String[] externals = column.split(":");
+ 				if (externals.length == 3) {
+ 					SObject pSObject = new SObject();
+ 	 				pSObject.setType(externals[1]);
+ 	 				pSObject.setField(externals[2], valueMap.get(column));
+ 	 				sObject.setField(externals[0], pSObject);
+ 				} else {
+ 					throw new Exception("関連項目の外部ID設定が不正です。");
+ 				}
 			} else {
-				
 				if (StringUtils.isNotEmpty(tVal)) {
 					if ("true".equals(tVal.toLowerCase()) || "false".equals(tVal.toLowerCase())) {
 						sObject.setField(column, new Boolean(valueMap.get(column)));

@@ -274,7 +274,7 @@ public class TeleCallExpService extends CommonService {
 		while (children.hasNext()) {
 			XmlObject xmlObject = (XmlObject) children.next();
 			String key = xmlObject.getName().getLocalPart();
-			if (!StringUtils.equals(key, "type") && !StringUtils.equals(key, "Id")) {
+			if (!StringUtils.equals(key, "type")) {
 				if (xmlObject.hasChildren()) {
 					pickSfdcData(xmlObject.getChildren(), sfdcData, key);
 				} else {
